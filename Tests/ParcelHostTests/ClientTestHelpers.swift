@@ -3,6 +3,17 @@
 
   @testable import Parcel
 
+  func fixtureURL(_ string: String) -> URL {
+    guard let url = URL(string: string) else {
+      preconditionFailure("Invalid fixture URL: \(string)")
+    }
+
+    return url
+  }
+
+  let exampleGenerateURL = fixtureURL("https://example.com/generate")
+  let exampleStatusURL = fixtureURL("https://example.com/status")
+
   /// Request fixture used to verify JSON request encoding.
   struct GenerateRequest: Codable, Equatable {
     let pagePath: String
@@ -10,7 +21,7 @@
 
   /// Response fixture used by success-path decoding tests.
   struct GenerateAccepted: Codable, Equatable {
-    let statusURL: String
+    let statusURL: URL
 
     private enum CodingKeys: String, CodingKey {
       case statusURL = "statusUrl"

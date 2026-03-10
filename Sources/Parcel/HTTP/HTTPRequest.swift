@@ -2,14 +2,14 @@ import Foundation
 
 public struct HTTPRequest: Equatable, Sendable {
   public let method: HTTPMethod
-  public let url: String
+  public let url: URL
   public let headers: HTTPHeaders
   public let body: Data?
   public let options: HTTPRequestOptions
 
   public init(
     method: HTTPMethod,
-    url: String,
+    url: URL,
     headers: HTTPHeaders = [:],
     body: Data? = nil,
     options: HTTPRequestOptions = .init()

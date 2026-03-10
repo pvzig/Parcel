@@ -20,7 +20,7 @@ public struct Client: Sendable {
   }
 
   public func get<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -35,7 +35,7 @@ public struct Client: Sendable {
   }
 
   public func head<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -50,7 +50,7 @@ public struct Client: Sendable {
   }
 
   public func delete<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -66,7 +66,7 @@ public struct Client: Sendable {
 
   public func post<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -83,7 +83,7 @@ public struct Client: Sendable {
 
   public func put<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -100,7 +100,7 @@ public struct Client: Sendable {
 
   public func patch<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -116,7 +116,7 @@ public struct Client: Sendable {
   }
 
   public func getResponse<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -131,7 +131,7 @@ public struct Client: Sendable {
   }
 
   public func headResponse<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -146,7 +146,7 @@ public struct Client: Sendable {
   }
 
   public func deleteResponse<Response: Decodable>(
-    from url: String,
+    from url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -162,7 +162,7 @@ public struct Client: Sendable {
 
   public func postResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -179,7 +179,7 @@ public struct Client: Sendable {
 
   public func putResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -196,7 +196,7 @@ public struct Client: Sendable {
 
   public func patchResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -224,7 +224,7 @@ public struct Client: Sendable {
 
   public func send<Response: Decodable>(
     _ method: HTTPMethod,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -240,7 +240,7 @@ public struct Client: Sendable {
 
   public func sendResponse<Response: Decodable>(
     _ method: HTTPMethod,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -259,7 +259,7 @@ public struct Client: Sendable {
   public func send<Request: Encodable, Response: Decodable>(
     _ method: HTTPMethod,
     body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -277,7 +277,7 @@ public struct Client: Sendable {
   public func sendResponse<Request: Encodable, Response: Decodable>(
     _ method: HTTPMethod,
     body: Request,
-    to url: String,
+    to url: URL,
     headers: HTTPHeaders = [:],
     options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
@@ -336,7 +336,7 @@ public struct Client: Sendable {
 
   private func makeRequest(
     method: HTTPMethod,
-    url: String,
+    url: URL,
     headers: HTTPHeaders,
     body: Data? = nil,
     options: HTTPRequestOptions

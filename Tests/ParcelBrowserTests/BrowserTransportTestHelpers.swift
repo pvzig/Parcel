@@ -2,9 +2,20 @@
   import Foundation
   @preconcurrency import JavaScriptKit
 
+  func fixtureURL(_ string: String) -> URL {
+    guard let url = URL(string: string) else {
+      preconditionFailure("Invalid fixture URL: \(string)")
+    }
+
+    return url
+  }
+
+  let exampleGenerateURL = fixtureURL("https://example.com/generate")
+  let exampleStatusURL = fixtureURL("https://example.com/status")
+
   /// Response fixture used by browser transport decoding tests.
   struct GenerateAccepted: Codable, Equatable {
-    let statusURL: String
+    let statusURL: URL
 
     private enum CodingKeys: String, CodingKey {
       case statusURL = "statusUrl"
@@ -13,7 +24,7 @@
 
   /// Captured request data returned by the JavaScript fetch prelude.
   struct RecordedBrowserRequest: Decodable, Equatable {
-    let url: String
+    let url: URL
     let method: String
     let headers: [String: String]
     let bodyText: String?
@@ -111,7 +122,7 @@
     func configureResponse(
       statusCode: Int,
       headers: [String: String] = [:],
-      url: String? = nil,
+      url: URL? = nil,
       bodyText: String? = nil,
       jsonBody: String? = nil,
       behavior: ResponseBehavior = .init()
@@ -130,7 +141,7 @@
 
       _ = configureResponse(
         JSValue.number(Double(statusCode)),
-        url.map(JSValue.string) ?? JSValue.null,
+        url.map { JSValue.string($0.absoluteString) } ?? JSValue.null,
         JSValue.string(headersJSON),
         bodyText.map(JSValue.string) ?? JSValue.null,
         jsonBody.map(JSValue.string) ?? JSValue.null,

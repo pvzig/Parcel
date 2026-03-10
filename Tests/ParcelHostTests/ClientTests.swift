@@ -8,7 +8,7 @@
     let transport = RecordingTransport(
       response: HTTPResponse(
         statusCode: 202,
-        body: try JSONEncoder().encode(GenerateAccepted(statusURL: "https://example.com/status"))
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(
@@ -18,7 +18,7 @@
 
     let accepted: GenerateAccepted = try await client.post(
       GenerateRequest(pagePath: "/posts/example"),
-      to: "https://example.com/generate",
+      to: exampleGenerateURL,
       headers: ["X-Trace": "123"]
     )
 
@@ -26,9 +26,9 @@
     let body = try #require(request?.body)
     let decodedBody = try JSONDecoder().decode(GenerateRequest.self, from: body)
 
-    #expect(accepted.statusURL == "https://example.com/status")
+    #expect(accepted.statusURL == exampleStatusURL)
     #expect(request?.method == .post)
-    #expect(request?.url == "https://example.com/generate")
+    #expect(request?.url == exampleGenerateURL)
     #expect(request?.headers["X-Client"] == "Parcel")
     #expect(request?.headers["X-Trace"] == "123")
     #expect(request?.headers["Accept"] == nil)
@@ -41,21 +41,21 @@
       response: HTTPResponse(
         statusCode: 202,
         headers: ["etag": "abc123"],
-        url: "https://example.com/status",
-        body: try JSONEncoder().encode(GenerateAccepted(statusURL: "https://example.com/status"))
+        url: exampleStatusURL,
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(transport: transport)
 
     let accepted = try await client.getResponse(
-      from: "https://example.com/status",
+      from: exampleStatusURL,
       expecting: GenerateAccepted.self
     )
 
-    #expect(accepted.value.statusURL == "https://example.com/status")
+    #expect(accepted.value.statusURL == exampleStatusURL)
     #expect(accepted.response.statusCode == 202)
     #expect(accepted.response.headers["etag"] == "abc123")
-    #expect(accepted.response.url == "https://example.com/status")
+    #expect(accepted.response.url == exampleStatusURL)
   }
 
   @Test func customDecoderAppliesToClientDecodePath() async throws {
@@ -78,7 +78,7 @@
       transport: transport
     )
 
-    let accepted: DatedAccepted = try await client.get(from: "https://example.com/status")
+    let accepted: DatedAccepted = try await client.get(from: exampleStatusURL)
 
     #expect(accepted.generatedAt == Date(timeIntervalSince1970: 1_773_079_200))
   }
@@ -87,7 +87,7 @@
     let transport = RecordingTransport(
       response: HTTPResponse(
         statusCode: 200,
-        body: try JSONEncoder().encode(GenerateAccepted(statusURL: "https://example.com/status"))
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(
@@ -98,7 +98,7 @@
     )
 
     let _: GenerateAccepted = try await client.get(
-      from: "https://example.com/status",
+      from: exampleStatusURL,
       headers: ["Accept": "application/json"]
     )
 
@@ -112,12 +112,12 @@
     let transport = RecordingTransport(
       response: HTTPResponse(
         statusCode: 200,
-        body: try JSONEncoder().encode(GenerateAccepted(statusURL: "https://example.com/status"))
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(transport: transport)
 
-    let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+    let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
     let request = await transport.lastRequest
 
     #expect(request?.headers["Accept"] == nil)
@@ -134,7 +134,7 @@
     _ = try await client.send(
       HTTPRequest(
         method: .head,
-        url: "https://example.com/status",
+        url: exampleStatusURL,
         headers: ["X-Trace": "123"]
       )
     )
@@ -152,7 +152,7 @@
     let transport = RecordingTransport(response: HTTPResponse(statusCode: 204))
     let client = Client(transport: transport)
 
-    let response: EmptyResponse = try await client.head(from: "https://example.com/status")
+    let response: EmptyResponse = try await client.head(from: exampleStatusURL)
     let request = await transport.lastRequest
 
     #expect(response == EmptyResponse())
@@ -163,7 +163,7 @@
     let client = Client()
 
     do {
-      let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+      let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
       #expect(error == .unsupportedPlatform)
@@ -175,7 +175,7 @@
 
     do {
       _ = try await transport.send(
-        HTTPRequest(method: .get, url: "https://example.com/status")
+        HTTPRequest(method: .get, url: exampleStatusURL)
       )
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
@@ -189,7 +189,7 @@
     )
     let client = Client(transport: transport)
 
-    let response: EmptyResponse = try await client.delete(from: "https://example.com/status")
+    let response: EmptyResponse = try await client.delete(from: exampleStatusURL)
 
     #expect(response == EmptyResponse())
   }
@@ -201,7 +201,7 @@
     let client = Client(transport: transport)
 
     do {
-      let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+      let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
       #expect(error == .emptyResponseBody)
@@ -215,7 +215,7 @@
     let client = Client(transport: transport)
 
     do {
-      let _: EmptyResponse = try await client.get(from: "https://example.com/status")
+      let _: EmptyResponse = try await client.get(from: exampleStatusURL)
       Issue.record("Expected request to throw")
     } catch is DecodingError {
     } catch {
@@ -230,7 +230,7 @@
     let client = Client(transport: transport)
 
     do {
-      let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+      let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
       #expect(error == .unsuccessfulStatusCode(503, body: "unavailable"))

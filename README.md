@@ -5,12 +5,14 @@ Parcel is a small browser HTTP client for SwiftWASM that encodes request bodies 
 ## Usage
 
 ```swift
+import Foundation
+
 struct GenerateRequest: Encodable {
     let pagePath: String
 }
 
 struct AcceptedResponse: Decodable {
-    let statusURL: String
+    let statusURL: URL
 
     private enum CodingKeys: String, CodingKey {
         case statusURL = "statusUrl"
@@ -20,10 +22,11 @@ struct AcceptedResponse: Decodable {
 
 ```swift
 let client = Client()
+let generateURL = URL(string: "https://example.com/api/generate")!
 
 let accepted: AcceptedResponse = try await client.post(
     GenerateRequest(pagePath: "/posts/example"),
-    to: "https://example.com/api/generate"
+    to: generateURL
 )
 ```
 
@@ -32,12 +35,13 @@ If you need response metadata like headers or the final URL:
 ```swift
 let accepted = try await client.postResponse(
     GenerateRequest(pagePath: "/posts/example"),
-    to: "https://example.com/api/generate",
+    to: generateURL,
     expecting: AcceptedResponse.self
 )
 
 let statusCode = accepted.response.statusCode
 let etag = accepted.response.headers["etag"]
+let finalURL = accepted.response.url
 let value = accepted.value
 ```
 
@@ -48,7 +52,8 @@ On the browser transport path, `response.json()`, `response.text()`, and `respon
 For successful responses with no body, use `EmptyResponse`:
 
 ```swift
-let _: EmptyResponse = try await client.delete(from: "https://example.com/api/delete")
+let deleteURL = URL(string: "https://example.com/api/delete")!
+let _: EmptyResponse = try await client.delete(from: deleteURL)
 ```
 
 If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure it through `ClientConfiguration`:

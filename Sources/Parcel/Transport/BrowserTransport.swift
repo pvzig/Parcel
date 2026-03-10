@@ -150,7 +150,7 @@ import Foundation
         options["body"] = JSTypedArray<UInt8>(body).jsValue
       }
 
-      guard let responsePromiseObject = fetch(request.url, options).object,
+      guard let responsePromiseObject = fetch(request.url.absoluteString, options).object,
         let responsePromise = JSPromise(responsePromiseObject)
       else {
         throw ClientError.invalidFetchResponse
@@ -346,8 +346,8 @@ import Foundation
       Int(responseObject.status.number ?? -1)
     }
 
-    private func responseURL(from responseObject: JSObject) -> String? {
-      responseObject.url.string
+    private func responseURL(from responseObject: JSObject) -> URL? {
+      responseObject.url.string.flatMap(URL.init(string:))
     }
   }
 #else

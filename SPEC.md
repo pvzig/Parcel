@@ -24,7 +24,7 @@ Parcel exposes:
 
 ## Behavior
 
-- `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points.
+- `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points that accept `Foundation.URL` request targets.
 - `Client` also provides `getResponse`, `headResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
 - `Client.send(_ request: HTTPRequest)` exposes raw request execution while merging configured default headers without auto-injecting JSON request headers.
 - `Client.sendResponse(_ request: HTTPRequest, expecting:)` decodes a caller-provided raw request while preserving the same default-header merge behavior as raw sends.
@@ -60,7 +60,7 @@ Parcel exposes:
 - `BrowserTransport` currently buffers raw bodies with `arrayBuffer()` and does not yet expose streaming `ReadableStream` access.
 - `BrowserTransport` does not retain temporary `JSClosure` bridges beyond synchronous JavaScript header iteration, using explicit release on JavaScriptKit no-weakrefs builds.
 - `BrowserTransport` keeps the same raw API surface on unsupported builds, but all methods throw `ClientError.unsupportedPlatform`.
-- `HTTPResponse` preserves status code, headers, final response URL, and optional byte body.
+- `HTTPResponse` preserves status code, headers, final response `URL?`, and optional byte body.
 
 ## Validation Model
 

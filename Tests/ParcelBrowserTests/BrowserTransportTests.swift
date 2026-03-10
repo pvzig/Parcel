@@ -31,14 +31,14 @@
       try harness.configureResponse(
         statusCode: 202,
         headers: ["etag": "abc123"],
-        url: "https://example.com/status",
+        url: exampleStatusURL,
         bodyText: "accepted"
       )
 
       let response = try await transport.send(
         HTTPRequest(
           method: .post,
-          url: "https://example.com/generate",
+          url: exampleGenerateURL,
           headers: [
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -51,10 +51,10 @@
 
       #expect(response.statusCode == 202)
       #expect(response.headers["etag"] == "abc123")
-      #expect(response.url == "https://example.com/status")
+      #expect(response.url == exampleStatusURL)
       #expect(String(data: try #require(response.body), encoding: .utf8) == "accepted")
       #expect(request.method == "POST")
-      #expect(request.url == "https://example.com/generate")
+      #expect(request.url == exampleGenerateURL)
       #expect(request.headers["Accept"] == "application/json")
       #expect(request.headers["Content-Type"] == "application/json")
       #expect(request.headers["X-Trace"] == "123")
@@ -71,7 +71,7 @@
       _ = try await transport.send(
         HTTPRequest(
           method: .get,
-          url: "https://example.com/status",
+          url: exampleStatusURL,
           options: HTTPRequestOptions(
             mode: .noCORS,
             credentials: .include,
@@ -95,19 +95,19 @@
       try harness.configureResponse(
         statusCode: 200,
         headers: ["content-type": "application/json"],
-        url: "https://example.com/status",
+        url: exampleStatusURL,
         jsonBody: #"{"statusUrl":"https://example.com/status"}"#
       )
 
       let accepted = try await client.sendResponse(
-        HTTPRequest(method: .get, url: "https://example.com/status"),
+        HTTPRequest(method: .get, url: exampleStatusURL),
         expecting: GenerateAccepted.self
       )
 
-      #expect(accepted.value == GenerateAccepted(statusURL: "https://example.com/status"))
+      #expect(accepted.value == GenerateAccepted(statusURL: exampleStatusURL))
       #expect(accepted.response.statusCode == 200)
       #expect(accepted.response.headers["content-type"] == "application/json")
-      #expect(accepted.response.url == "https://example.com/status")
+      #expect(accepted.response.url == exampleStatusURL)
       #expect(
         String(data: try #require(accepted.response.body), encoding: .utf8)
           == #"{"statusUrl":"https://example.com/status"}"#
@@ -130,7 +130,7 @@
 
       do {
         let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: "https://example.com/status"),
+          HTTPRequest(method: .get, url: exampleStatusURL),
           expecting: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
@@ -155,7 +155,7 @@
 
       do {
         let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: "https://example.com/status"),
+          HTTPRequest(method: .get, url: exampleStatusURL),
           expecting: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
@@ -175,7 +175,7 @@
       try harness.configureResponse(statusCode: 204)
 
       let response = try await client.sendResponse(
-        HTTPRequest(method: .delete, url: "https://example.com/status"),
+        HTTPRequest(method: .delete, url: exampleStatusURL),
         expecting: EmptyResponse.self
       )
 
@@ -198,7 +198,7 @@
 
       do {
         let _: DecodedResponse<EmptyResponse> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: "https://example.com/status"),
+          HTTPRequest(method: .get, url: exampleStatusURL),
           expecting: EmptyResponse.self
         )
         Issue.record("Expected request to throw")
@@ -221,7 +221,7 @@
 
       let task = Task {
         try await transport.send(
-          HTTPRequest(method: .get, url: "https://example.com/status")
+          HTTPRequest(method: .get, url: exampleStatusURL)
         )
       }
 
@@ -259,7 +259,7 @@
         _ = try await transport.send(
           HTTPRequest(
             method: .get,
-            url: "https://example.com/status",
+            url: exampleStatusURL,
             options: HTTPRequestOptions(timeout: .milliseconds(50))
           )
         )
@@ -282,13 +282,13 @@
       try harness.reset()
       try harness.configureResponse(
         statusCode: 503,
-        url: "https://example.com/status",
+        url: exampleStatusURL,
         bodyText: "unavailable"
       )
 
       do {
         let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: "https://example.com/status"),
+          HTTPRequest(method: .get, url: exampleStatusURL),
           expecting: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
