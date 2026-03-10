@@ -39,26 +39,89 @@
     let generatedAt: Date
   }
 
-  enum PlainTextCodecError: Error {
-    case unsupportedType(String)
+  /// Flat form fixture used to validate `FormURLEncodedBodyCodec`.
+  struct TokenExchangePayload: Codable, Equatable {
+    let grantType: String
+    let scope: String
+    let expiresIn: Int
+    let active: Bool
+    let tags: [String]
+
+    private enum CodingKeys: String, CodingKey {
+      case grantType = "grant_type"
+      case scope
+      case expiresIn = "expires_in"
+      case active
+      case tags = "tag"
+    }
   }
 
-  struct PlainTextCodec: BodyCodec {
-    func encode<Request: Encodable>(_ value: Request) throws -> Data {
-      guard let text = value as? String else {
-        throw PlainTextCodecError.unsupportedType(String(describing: Request.self))
-      }
-
-      return Data(text.utf8)
+  func decodeFormFields(_ data: Data) -> [String: [String]] {
+    guard let body = String(data: data, encoding: .utf8) else {
+      preconditionFailure("Expected UTF-8 form body")
     }
 
-    func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
-      let text = String(decoding: data, as: UTF8.self)
-      guard let value = text as? Response else {
-        throw PlainTextCodecError.unsupportedType(String(describing: Response.self))
-      }
+    guard body.isEmpty == false else {
+      return [:]
+    }
 
-      return value
+    var values: [String: [String]] = [:]
+
+    for pair in body.split(separator: "&", omittingEmptySubsequences: false) {
+      let segments = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      let name = decodeFormComponent(String(segments[0]))
+      let value = decodeFormComponent(segments.count == 2 ? String(segments[1]) : "")
+      values[name, default: []].append(value)
+    }
+
+    return values
+  }
+
+  private func decodeFormComponent(_ component: String) -> String {
+    let bytes = Array(component.utf8)
+    var decodedBytes: [UInt8] = []
+    decodedBytes.reserveCapacity(bytes.count)
+
+    var index = 0
+    while index < bytes.count {
+      switch bytes[index] {
+      case 0x2B:
+        decodedBytes.append(0x20)
+        index += 1
+      case 0x25:
+        guard
+          index + 2 < bytes.count,
+          let upper = decodeHexDigit(bytes[index + 1]),
+          let lower = decodeHexDigit(bytes[index + 2])
+        else {
+          preconditionFailure("Invalid percent-encoded form component")
+        }
+
+        decodedBytes.append((upper << 4) | lower)
+        index += 3
+      default:
+        decodedBytes.append(bytes[index])
+        index += 1
+      }
+    }
+
+    guard let decoded = String(bytes: decodedBytes, encoding: .utf8) else {
+      preconditionFailure("Decoded form component was not valid UTF-8")
+    }
+
+    return decoded
+  }
+
+  private func decodeHexDigit(_ byte: UInt8) -> UInt8? {
+    switch byte {
+    case 0x30...0x39:
+      byte - 48
+    case 0x41...0x46:
+      byte - 55
+    case 0x61...0x66:
+      byte - 87
+    default:
+      nil
     }
   }
 

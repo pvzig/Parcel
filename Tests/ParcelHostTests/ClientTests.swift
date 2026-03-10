@@ -88,7 +88,7 @@
     #expect(accepted.generatedAt == Date(timeIntervalSince1970: 1_773_079_200))
   }
 
-  @Test func customBodyCodecReplacesJSONForTypedRequestsAndResponses() async throws {
+  @Test func plainTextBodyCodingUsesBuiltInCodec() async throws {
     let transport = RecordingTransport(
       response: fixtureResponse(
         statusCode: 202,
@@ -97,11 +97,7 @@
     )
     let client = Client(
       configuration: ClientConfiguration(
-        bodyCoding: .init(
-          codec: PlainTextCodec(),
-          requestContentType: "text/plain",
-          accept: ["text/plain"]
-        )
+        bodyCoding: .plainText()
       ),
       transport: transport
     )
@@ -118,6 +114,97 @@
     #expect(request?.headerFields[.accept] == "text/plain")
     #expect(request?.headerFields[.contentType] == "text/plain")
     #expect(String(decoding: body, as: UTF8.self) == "publish")
+  }
+
+  @Test func formURLEncodedBodyCodecRoundTripsFlatPayloads() throws {
+    let codec = FormURLEncodedBodyCodec()
+    let payload = TokenExchangePayload(
+      grantType: "client_credentials",
+      scope: "read write",
+      expiresIn: 3600,
+      active: true,
+      tags: ["fast", "beta"]
+    )
+
+    let body = try codec.encode(payload)
+    let decoded = try codec.decode(TokenExchangePayload.self, from: body)
+    let fields = decodeFormFields(body)
+
+    #expect(fields["grant_type"] == ["client_credentials"])
+    #expect(fields["scope"] == ["read write"])
+    #expect(fields["expires_in"] == ["3600"])
+    #expect(fields["active"] == ["true"])
+    #expect(fields["tag"] == ["fast", "beta"])
+    #expect(decoded == payload)
+  }
+
+  @Test func formURLEncodedBodyCodingAppliesHeadersAndEncodesTypedRequests() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 200,
+        body: Data(
+          "grant_type=client_credentials&scope=read+write&expires_in=3600&active=true&tag=fast&tag=beta"
+            .utf8
+        )
+      )
+    )
+    let client = Client(
+      configuration: ClientConfiguration(bodyCoding: .formURLEncoded()),
+      transport: transport
+    )
+    let payload = TokenExchangePayload(
+      grantType: "client_credentials",
+      scope: "read write",
+      expiresIn: 3600,
+      active: true,
+      tags: ["fast", "beta"]
+    )
+
+    let accepted: TokenExchangePayload = try await client.post(
+      payload,
+      to: exampleGenerateURL
+    )
+
+    let request = await transport.lastRequest
+    let body = try #require(await transport.lastBody)
+    let fields = decodeFormFields(body)
+
+    #expect(accepted == payload)
+    #expect(request?.headerFields[.accept] == "application/x-www-form-urlencoded")
+    #expect(request?.headerFields[.contentType] == "application/x-www-form-urlencoded")
+    #expect(fields["grant_type"] == ["client_credentials"])
+    #expect(fields["scope"] == ["read write"])
+    #expect(fields["expires_in"] == ["3600"])
+    #expect(fields["active"] == ["true"])
+    #expect(fields["tag"] == ["fast", "beta"])
+  }
+
+  @Test func rawDataBodyCodingPassesThroughBinaryBodies() async throws {
+    let responseBody = Data([0xDE, 0xAD, 0xBE, 0xEF])
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 200,
+        body: responseBody
+      )
+    )
+    let client = Client(
+      configuration: ClientConfiguration(bodyCoding: .rawData()),
+      transport: transport
+    )
+    let payload = Data([0x00, 0x01, 0x7F])
+
+    let accepted: Data = try await client.post(
+      payload,
+      to: exampleGenerateURL
+    )
+
+    let request = await transport.lastRequest
+    let body = try #require(await transport.lastBody)
+
+    #expect(accepted == responseBody)
+    #expect(body == payload)
+    #expect(request?.headerFields[.accept] == "application/octet-stream")
+    #expect(request?.headerFields[.contentType] == "application/octet-stream")
   }
 
   @Test func defaultAndAdditionalHeadersAreBothPreserved() async throws {

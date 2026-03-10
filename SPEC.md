@@ -13,6 +13,9 @@ Parcel exposes:
 - `BodyCodec`
 - `BodyCodingConfiguration`
 - `JSONBodyCodec`
+- `FormURLEncodedBodyCodec`
+- `PlainTextBodyCodec`
+- `RawDataBodyCodec`
 - `swift-http-types` message-head types used directly by Parcel's public API, including
   `HTTPField`, `HTTPFields`, `HTTPRequest`, and `HTTPResponse`
 - `DecodedResponse`
@@ -30,6 +33,7 @@ Parcel exposes:
 - Typed request bodies are encoded with the configured `BodyCodec`.
 - Typed response bodies are decoded with the configured `BodyCodec`.
 - `BodyCodingConfiguration` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
+- `BodyCodingConfiguration` provides convenience factories for JSON, form URL-encoded, plain-text, and raw-data body coding.
 - Typed `Client` request builders append the configured `Accept` header values when the request does not already provide `Accept`.
 - Typed `Client` request builders append the configured `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
@@ -40,6 +44,9 @@ Parcel exposes:
 - Empty successful responses can be decoded as `EmptyResponse`.
 - `ClientConfiguration` allows callers to supply a default `BodyCodingConfiguration`; `BodyCodingConfiguration.json()` is the default implementation.
 - `JSONBodyCodec` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
+- `FormURLEncodedBodyCodec` supports flat top-level keyed payloads and repeated keys for array values, but does not support nested keyed containers.
+- `PlainTextBodyCodec` encodes and decodes UTF-8 `String` values.
+- `RawDataBodyCodec` encodes and decodes raw `Data` values.
 - Successful typed responses preserve the raw response bytes and final response `URL?` on `DecodedResponse` while decoding from that same buffered body.
 - Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for byte and text body reads.
 - Browser request or response-body cancellation throws `CancellationError`.

@@ -90,33 +90,48 @@ let client = Client(
 )
 ```
 
+Parcel also includes built-in helpers for a few common non-JSON wire formats:
+
+```swift
+let formClient = Client(
+    configuration: ClientConfiguration(bodyCoding: .formURLEncoded())
+)
+
+let textClient = Client(
+    configuration: ClientConfiguration(bodyCoding: .plainText())
+)
+
+let binaryClient = Client(
+    configuration: ClientConfiguration(bodyCoding: .rawData())
+)
+```
+
+`FormURLEncodedBodyCodec` supports flat keyed payloads and repeated keys for array values. Nested
+keyed containers are not supported.
+
 If you need a different typed wire format entirely, provide a custom `BodyCodec`:
 
 ```swift
-enum PlainTextCodecError: Error {
-    case unsupportedType
+enum CustomCodecError: Error {
+    case unsupported
 }
 
-struct PlainTextCodec: BodyCodec {
+struct CustomCodec: BodyCodec {
     func encode<Request: Encodable>(_ value: Request) throws -> Data {
-        guard let text = value as? String else { throw PlainTextCodecError.unsupportedType }
-        return Data(text.utf8)
+        throw CustomCodecError.unsupported
     }
 
     func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
-        guard let value = String(decoding: data, as: UTF8.self) as? Response else {
-            throw PlainTextCodecError.unsupportedType
-        }
-        return value
+        throw CustomCodecError.unsupported
     }
 }
 
 let client = Client(
     configuration: ClientConfiguration(
         bodyCoding: .init(
-            codec: PlainTextCodec(),
-            requestContentType: "text/plain",
-            accept: ["text/plain"]
+            codec: CustomCodec(),
+            requestContentType: "application/custom",
+            accept: ["application/custom"]
         )
     )
 )

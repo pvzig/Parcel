@@ -97,11 +97,7 @@
       let transport = BrowserTransport()
       let client = Client(
         configuration: ClientConfiguration(
-          bodyCoding: .init(
-            codec: PlainTextCodec(),
-            requestContentType: "text/plain",
-            accept: ["text/plain"]
-          )
+          bodyCoding: .plainText()
         ),
         transport: transport
       )
