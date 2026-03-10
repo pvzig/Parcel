@@ -92,6 +92,34 @@
       )
     }
 
+    @Test func clientDecodePathOverBrowserTransportUsesConfiguredBodyCodec() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+      let client = Client(
+        configuration: ClientConfiguration(bodyCodec: PlainTextCodec()),
+        transport: transport
+      )
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 202,
+        headers: ["content-type": "text/plain"],
+        url: exampleStatusURL,
+        bodyText: "accepted"
+      )
+
+      let accepted: String = try await client.post(
+        "publish",
+        to: exampleGenerateURL
+      )
+      let recordedRequest = try #require(harness.recordedRequests().first)
+
+      #expect(accepted == "accepted")
+      #expect(recordedRequest.headers["Accept"] == nil)
+      #expect(recordedRequest.headers["Content-Type"] == nil)
+      #expect(recordedRequest.bodyText == "publish")
+    }
+
     @Test func clientDecodePathOverBrowserTransportUsesJSONDecoderForInvalidJSONPayloads()
       async throws
     {

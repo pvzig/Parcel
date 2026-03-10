@@ -299,14 +299,13 @@ public struct Client: Sendable {
     timeout: Duration? = nil,
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
-    let encoder = configuration.jsonCoding.makeEncoder()
     return try await execute(
       makeRequest(
         method: method,
         url: url,
         headers: headers
       ),
-      body: try encoder.encode(body),
+      body: try configuration.bodyCodec.encode(body),
       timeout: timeout,
       expecting: responseType
     )
@@ -338,8 +337,7 @@ public struct Client: Sendable {
     }
 
     if let body = response.body, body.isEmpty == false {
-      let decoder = configuration.jsonCoding.makeDecoder()
-      let value = try decoder.decode(responseType, from: body)
+      let value = try configuration.bodyCodec.decode(responseType, from: body)
       return DecodedResponse(
         value: value,
         response: response.response,

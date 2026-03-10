@@ -1,7 +1,7 @@
 # Parcel
 
-Parcel is a small browser HTTP client for SwiftWASM that encodes request bodies from `Encodable`
-models and decodes responses into `Decodable` models.
+Parcel is a small browser HTTP client for SwiftWASM with pluggable typed body codecs. It
+defaults to JSON for `Encodable` request bodies and `Decodable` responses.
 
 Parcel uses Apple's [`swift-http-types`](https://github.com/apple/swift-http-types) directly for
 `HTTPRequest`, `HTTPResponse`, and `HTTPFields`. Parcel-specific state like buffered response
@@ -67,12 +67,13 @@ let deleteURL = URL(string: "https://example.com/api/delete")!
 let _: EmptyResponse = try await client.delete(from: deleteURL)
 ```
 
-If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure it through `ClientConfiguration`:
+If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec`
+through `ClientConfiguration`:
 
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
-        jsonCoding: JSONCodingConfiguration(
+        bodyCodec: JSONBodyCodec(
             makeDecoder: {
                 let decoder = JSONDecoder()
                 decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -80,6 +81,32 @@ let client = Client(
             }
         )
     )
+)
+```
+
+If you need a different typed wire format entirely, provide a custom `BodyCodec`:
+
+```swift
+enum PlainTextCodecError: Error {
+    case unsupportedType
+}
+
+struct PlainTextCodec: BodyCodec {
+    func encode<Request: Encodable>(_ value: Request) throws -> Data {
+        guard let text = value as? String else { throw PlainTextCodecError.unsupportedType }
+        return Data(text.utf8)
+    }
+
+    func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
+        guard let value = String(decoding: data, as: UTF8.self) as? Response else {
+            throw PlainTextCodecError.unsupportedType
+        }
+        return value
+    }
+}
+
+let client = Client(
+    configuration: ClientConfiguration(bodyCodec: PlainTextCodec())
 )
 ```
 

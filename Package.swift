@@ -60,7 +60,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
-    .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.46.5")
+    .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.46.5"),
   ],
   targets: packageTargets
 )

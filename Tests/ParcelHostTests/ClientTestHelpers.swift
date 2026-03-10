@@ -39,6 +39,29 @@
     let generatedAt: Date
   }
 
+  enum PlainTextCodecError: Error {
+    case unsupportedType(String)
+  }
+
+  struct PlainTextCodec: BodyCodec {
+    func encode<Request: Encodable>(_ value: Request) throws -> Data {
+      guard let text = value as? String else {
+        throw PlainTextCodecError.unsupportedType(String(describing: Request.self))
+      }
+
+      return Data(text.utf8)
+    }
+
+    func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
+      let text = String(decoding: data, as: UTF8.self)
+      guard let value = text as? Response else {
+        throw PlainTextCodecError.unsupportedType(String(describing: Response.self))
+      }
+
+      return value
+    }
+  }
+
   func fixtureResponse(
     statusCode: Int,
     headerFields: HTTPFields = [:],

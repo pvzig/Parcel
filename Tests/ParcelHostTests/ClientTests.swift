@@ -70,7 +70,7 @@
     )
     let client = Client(
       configuration: ClientConfiguration(
-        jsonCoding: JSONCodingConfiguration(
+        bodyCodec: JSONBodyCodec(
           makeDecoder: {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
@@ -84,6 +84,29 @@
     let accepted: DatedAccepted = try await client.get(from: exampleStatusURL)
 
     #expect(accepted.generatedAt == Date(timeIntervalSince1970: 1_773_079_200))
+  }
+
+  @Test func customBodyCodecReplacesJSONForTypedRequestsAndResponses() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 202,
+        body: Data("accepted".utf8)
+      )
+    )
+    let client = Client(
+      configuration: ClientConfiguration(bodyCodec: PlainTextCodec()),
+      transport: transport
+    )
+
+    let accepted: String = try await client.post(
+      "publish",
+      to: exampleGenerateURL
+    )
+
+    let body = try #require(await transport.lastBody)
+
+    #expect(accepted == "accepted")
+    #expect(String(decoding: body, as: UTF8.self) == "publish")
   }
 
   @Test func defaultAndAdditionalHeadersAreBothPreserved() async throws {
@@ -107,10 +130,11 @@
 
     let request = await transport.lastRequest
 
-    #expect(request?.headerFields[values: .accept] == [
-      "application/vnd.parcel+json",
-      "application/json",
-    ])
+    #expect(
+      request?.headerFields[values: .accept] == [
+        "application/vnd.parcel+json",
+        "application/json",
+      ])
   }
 
   @Test func typedRequestsDoNotAddJSONHeadersByDefault() async throws {

@@ -2,7 +2,7 @@
 
 ## Objective
 
-Parcel is a small browser HTTP client for SwiftWASM that wraps the browser Fetch API with a Swift `Codable` interface.
+Parcel is a small browser HTTP client for SwiftWASM that wraps the browser Fetch API with typed request and response codecs.
 
 ## Public API
 
@@ -10,7 +10,8 @@ Parcel exposes:
 
 - `Client`
 - `ClientConfiguration`
-- `JSONCodingConfiguration`
+- `BodyCodec`
+- `JSONBodyCodec`
 - `swift-http-types` message-head types used directly by Parcel's public API, including
   `HTTPField`, `HTTPFields`, `HTTPRequest`, and `HTTPResponse`
 - `DecodedResponse`
@@ -23,10 +24,10 @@ Parcel exposes:
 
 - `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points that accept `Foundation.URL` request targets.
 - `Client` also provides `getResponse`, `headResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
-- `Client.send(_ request: HTTPRequest, body:timeout:)` exposes raw request execution while appending configured default header fields without auto-injecting JSON request headers.
+- `Client.send(_ request: HTTPRequest, body:timeout:)` exposes raw request execution while appending configured default header fields without auto-injecting codec-specific request headers.
 - `Client.sendResponse(_ request: HTTPRequest, body:timeout:, expecting:)` decodes a caller-provided raw request while preserving the same default-header append behavior as raw sends.
-- Request bodies are encoded with `JSONEncoder`.
-- Response bodies are decoded with `JSONDecoder`.
+- Typed request bodies are encoded with the configured `BodyCodec`.
+- Typed response bodies are decoded with the configured `BodyCodec`.
 - `Client` does not inject `Accept` or `Content-Type` defaults for typed requests; callers must supply any content-negotiation headers explicitly.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
   field semantics instead of maintaining custom protocol primitives.
@@ -34,8 +35,8 @@ Parcel exposes:
 - Configured default header fields are appended ahead of per-call header fields without custom override logic.
 - Typed `Client` entry points throw `ClientError.unsuccessfulStatusCode` for non-2xx responses before decoding.
 - Empty successful responses can be decoded as `EmptyResponse`.
-- `ClientConfiguration` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
-- `Client` always decodes response bytes with the configured `JSONDecoder`.
+- `ClientConfiguration` allows callers to supply a default `BodyCodec`; `JSONBodyCodec` is the default implementation.
+- `JSONBodyCodec` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
 - Successful typed responses preserve the raw response bytes and final response `URL?` on `DecodedResponse` while decoding from that same buffered body.
 - Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for byte and text body reads.
 - Browser request or response-body cancellation throws `CancellationError`.
@@ -50,7 +51,7 @@ Parcel exposes:
 - `BrowserTransport.isSupportedRuntime` accepts both window and worker-style JavaScript global scopes when `fetch`, `AbortController`, `Object`, and `Uint8Array` are available.
 - `BrowserTransport` installs JavaScriptKit's global event-loop executor when initialized in a supported runtime.
 - `BrowserTransport` accepts an optional per-request timeout and enforces it with `AbortController` plus `setTimeout`.
-- Because `BrowserTransport` buffers raw byte bodies, the generic client decode path handles empty-response and malformed-JSON behavior consistently for browser requests.
+- Because `BrowserTransport` buffers raw byte bodies, the generic client decode path handles empty-response and malformed-payload behavior consistently for browser requests regardless of the configured codec.
 - Raw transport responses remain available as byte bodies via `arrayBuffer()`.
 - `BrowserTransport` binds JavaScript instance method calls through JavaScriptKit member-call helpers so browser methods receive the correct `this` value.
 - `BrowserTransport` threads an `AbortController` signal through `fetch` and response-body reads so Swift task cancellation aborts the browser request and body consumption.
