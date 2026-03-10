@@ -42,6 +42,7 @@ public enum ClientError: Error, Equatable {
   case invalidJavaScriptContext
   case invalidResponseBody
   case responseBodyFailure(ResponseBodyFailure)
+  case timedOut
   case unsuccessfulStatusCode(Int, body: String?)
   case unsupportedPlatform
 }

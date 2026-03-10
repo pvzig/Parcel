@@ -17,6 +17,9 @@
     let method: String
     let headers: [String: String]
     let bodyText: String?
+    let mode: String?
+    let credentials: String?
+    let cache: String?
     let aborted: Bool
   }
 

@@ -29,10 +29,10 @@
     #expect(accepted.statusURL == "https://example.com/status")
     #expect(request?.method == .post)
     #expect(request?.url == "https://example.com/generate")
-    #expect(request?.headers["Accept"] == "application/json")
-    #expect(request?.headers["Content-Type"] == "application/json")
     #expect(request?.headers["X-Client"] == "Parcel")
     #expect(request?.headers["X-Trace"] == "123")
+    #expect(request?.headers["Accept"] == nil)
+    #expect(request?.headers["Content-Type"] == nil)
     #expect(decodedBody == GenerateRequest(pagePath: "/posts/example"))
   }
 
@@ -58,24 +58,8 @@
     #expect(accepted.response.url == "https://example.com/status")
   }
 
-  @Test func clientUsesResponseDecodingTransportWhenAvailable() async throws {
-    let transport = ResponseDecodingRecordingTransport()
-    let client = Client(transport: transport)
-
-    let accepted: GenerateAccepted = try await client.post(
-      GenerateRequest(pagePath: "/posts/example"),
-      to: "https://example.com/generate"
-    )
-
-    let counts = await transport.counts()
-
-    #expect(accepted.statusURL == "https://example.com/status")
-    #expect(counts.rawSendCount == 0)
-    #expect(counts.typedSendCount == 1)
-  }
-
-  @Test func customDecoderUsesDataPathWhenTransportOptimizationIsDisabled() async throws {
-    let transport = ResponseDecodingRecordingTransport(
+  @Test func customDecoderAppliesToClientDecodePath() async throws {
+    let transport = RecordingTransport(
       response: HTTPResponse(
         statusCode: 200,
         body: Data(#"{"generatedAt":"2026-03-09T18:00:00Z"}"#.utf8)
@@ -88,19 +72,15 @@
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             return decoder
-          },
-          prefersTransportSpecificResponseDecoding: false
+          }
         )
       ),
       transport: transport
     )
 
     let accepted: DatedAccepted = try await client.get(from: "https://example.com/status")
-    let counts = await transport.counts()
 
     #expect(accepted.generatedAt == Date(timeIntervalSince1970: 1_773_079_200))
-    #expect(counts.rawSendCount == 1)
-    #expect(counts.typedSendCount == 0)
   }
 
   @Test func additionalHeadersOverrideDefaultHeadersCaseInsensitively() async throws {
@@ -125,7 +105,58 @@
     let request = await transport.lastRequest
 
     #expect(request?.headers["Accept"] == "application/json")
-    #expect(request?.headers["accept"] == nil)
+    #expect(request?.headers.values(for: "accept") == ["application/json"])
+  }
+
+  @Test func typedRequestsDoNotAddJSONHeadersByDefault() async throws {
+    let transport = RecordingTransport(
+      response: HTTPResponse(
+        statusCode: 200,
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: "https://example.com/status"))
+      )
+    )
+    let client = Client(transport: transport)
+
+    let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+    let request = await transport.lastRequest
+
+    #expect(request?.headers["Accept"] == nil)
+    #expect(request?.headers["Content-Type"] == nil)
+  }
+
+  @Test func rawRequestSendMergesDefaultHeadersWithoutAddingJSONHeaders() async throws {
+    let transport = RecordingTransport(response: HTTPResponse(statusCode: 204))
+    let client = Client(
+      configuration: ClientConfiguration(defaultHeaders: ["X-Client": "Parcel"]),
+      transport: transport
+    )
+
+    _ = try await client.send(
+      HTTPRequest(
+        method: .head,
+        url: "https://example.com/status",
+        headers: ["X-Trace": "123"]
+      )
+    )
+
+    let request = await transport.lastRequest
+
+    #expect(request?.method == .head)
+    #expect(request?.headers["X-Client"] == "Parcel")
+    #expect(request?.headers["X-Trace"] == "123")
+    #expect(request?.headers["Accept"] == nil)
+    #expect(request?.headers["Content-Type"] == nil)
+  }
+
+  @Test func headResponseSendsHEADRequests() async throws {
+    let transport = RecordingTransport(response: HTTPResponse(statusCode: 204))
+    let client = Client(transport: transport)
+
+    let response: EmptyResponse = try await client.head(from: "https://example.com/status")
+    let request = await transport.lastRequest
+
+    #expect(response == EmptyResponse())
+    #expect(request?.method == .head)
   }
 
   @Test func defaultClientUsesUnavailableTransportOnHostBuilds() async throws {
@@ -139,13 +170,12 @@
     }
   }
 
-  @Test func browserTransportTypedSendIsUnavailableOnHostBuilds() async throws {
+  @Test func browserTransportRawSendIsUnavailableOnHostBuilds() async throws {
     let transport = BrowserTransport()
 
     do {
-      let _: DecodedResponse<GenerateAccepted> = try await transport.sendResponse(
-        HTTPRequest(method: .get, url: "https://example.com/status"),
-        expecting: GenerateAccepted.self
+      _ = try await transport.send(
+        HTTPRequest(method: .get, url: "https://example.com/status")
       )
       Issue.record("Expected request to throw")
     } catch let error as ClientError {

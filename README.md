@@ -61,14 +61,11 @@ let client = Client(
                 let decoder = JSONDecoder()
                 decoder.keyDecodingStrategy = .convertFromSnakeCase
                 return decoder
-            },
-            prefersTransportSpecificResponseDecoding: false
+            }
         )
     )
 )
 ```
-
-Set `prefersTransportSpecificResponseDecoding` to `false` when you need your configured `JSONDecoder` to be used for browser responses instead of the optimized `JSValueDecoder` path.
 
 ## Runtime
 

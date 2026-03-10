@@ -213,7 +213,9 @@ function runAbortableOperation({ signal, requestRecord, delayMilliseconds = 0, p
 
       abortListener = () => {
         requestRecord.aborted = true;
-        fail(makeNamedError("AbortError", "The operation was aborted."));
+        enqueueMicrotask(() => {
+          fail(makeNamedError("AbortError", "The operation was aborted."));
+        });
       };
 
       if (typeof signal.addEventListener === "function") {
@@ -365,6 +367,9 @@ globalThis.fetch = async function fetch(url, init = {}) {
     method: String(init.method ?? "GET"),
     headers: normalizeHeaders(init.headers),
     bodyText: decodeBody(init.body),
+    mode: init.mode == null ? null : String(init.mode),
+    credentials: init.credentials == null ? null : String(init.credentials),
+    cache: init.cache == null ? null : String(init.cache),
     aborted: false,
   };
 

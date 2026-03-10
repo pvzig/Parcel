@@ -1,9 +1,9 @@
 public struct ClientConfiguration: Sendable {
-  public var defaultHeaders: [String: String]
+  public var defaultHeaders: HTTPHeaders
   public var jsonCoding: JSONCodingConfiguration
 
   public init(
-    defaultHeaders: [String: String] = [:],
+    defaultHeaders: HTTPHeaders = [:],
     jsonCoding: JSONCodingConfiguration = .init()
   ) {
     self.defaultHeaders = defaultHeaders

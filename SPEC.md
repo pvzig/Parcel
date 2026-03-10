@@ -11,8 +11,10 @@ Parcel exposes:
 - `Client`
 - `ClientConfiguration`
 - `JSONCodingConfiguration`
+- `HTTPHeaders`
 - `HTTPMethod`
 - `HTTPRequest`
+- `HTTPRequestOptions`
 - `HTTPResponse`
 - `DecodedResponse`
 - `EmptyResponse`
@@ -22,21 +24,23 @@ Parcel exposes:
 
 ## Behavior
 
-- `Client` provides `get`, `delete`, `post`, `put`, `patch`, and generic `send` entry points.
-- `Client` also provides `getResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
+- `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points.
+- `Client` also provides `getResponse`, `headResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
+- `Client.send(_ request: HTTPRequest)` exposes raw request execution while merging configured default headers without auto-injecting JSON request headers.
+- `Client.sendResponse(_ request: HTTPRequest, expecting:)` decodes a caller-provided raw request while preserving the same default-header merge behavior as raw sends.
 - Request bodies are encoded with `JSONEncoder`.
 - Response bodies are decoded with `JSONDecoder`.
-- `Accept: application/json` is added automatically unless the caller already supplies an `Accept` header.
-- `Content-Type: application/json` is added automatically for requests with encoded JSON bodies unless the caller already supplies a `Content-Type` header.
-- Per-call headers override default headers case-insensitively.
+- `Client` does not inject `Accept` or `Content-Type` defaults for typed requests; callers must supply any content-negotiation headers explicitly.
+- `HTTPHeaders` preserves repeated header values and resolves lookups case-insensitively.
+- Per-call headers override default headers case-insensitively while preserving repeated values supplied by the call site.
 - Typed `Client` entry points throw `ClientError.unsuccessfulStatusCode` for non-2xx responses before decoding.
 - Empty successful responses can be decoded as `EmptyResponse`.
 - `ClientConfiguration` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
-- When `prefersTransportSpecificResponseDecoding` is `true` and the active transport supports it, `Client` uses the transport's typed decode path instead of round-tripping successful JSON through `Data`.
-- When `prefersTransportSpecificResponseDecoding` is `false`, `Client` always decodes response bytes with the configured `JSONDecoder`.
-- Successful typed responses preserve the raw `HTTPResponse.body` bytes across both the generic decode path and transport-specific decode paths.
-- Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for body reads and `response.json()`.
+- `Client` always decodes response bytes with the configured `JSONDecoder`.
+- Successful typed responses preserve the raw `HTTPResponse.body` bytes while decoding from that same buffered body.
+- Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for byte and text body reads.
 - Browser request or response-body cancellation throws `CancellationError`.
+- Browser request and response-body timeouts throw `ClientError.timedOut`.
 
 ## Transport Model
 
@@ -46,15 +50,16 @@ Parcel exposes:
 - `BrowserTransport` uses the browser `fetch` API.
 - `BrowserTransport.isSupportedRuntime` accepts both window and worker-style JavaScript global scopes when `fetch`, `AbortController`, `Object`, and `Uint8Array` are available.
 - `BrowserTransport` installs JavaScriptKit's global event-loop executor when initialized in a supported runtime.
-- For typed client requests, `BrowserTransport` clones successful responses so decoded responses retain raw response bytes while still decoding non-empty JSON payloads via `response.json()` and `JSValueDecoder`.
-- `BrowserTransport` throws `ClientError.emptyResponseBody` for successful empty bodies when the caller expects a non-`EmptyResponse` model, matching the generic client decode path.
-- `BrowserTransport` validates non-empty `EmptyResponse` payloads as JSON rather than silently discarding malformed bodies.
+- `HTTPRequestOptions` carries browser fetch options for timeout, mode, credentials, and cache behavior.
+- `BrowserTransport` maps `HTTPRequestOptions.mode`, `HTTPRequestOptions.credentials`, and `HTTPRequestOptions.cache` onto the browser fetch init object when present.
+- `BrowserTransport` enforces `HTTPRequestOptions.timeout` with `AbortController` plus `setTimeout`.
+- Because `BrowserTransport` buffers raw byte bodies, the generic client decode path handles empty-response and malformed-JSON behavior consistently for browser requests.
 - Raw transport responses remain available as byte bodies via `arrayBuffer()`.
 - `BrowserTransport` binds JavaScript instance method calls through JavaScriptKit member-call helpers so browser methods receive the correct `this` value.
 - `BrowserTransport` threads an `AbortController` signal through `fetch` and response-body reads so Swift task cancellation aborts the browser request and body consumption.
 - `BrowserTransport` currently buffers raw bodies with `arrayBuffer()` and does not yet expose streaming `ReadableStream` access.
 - `BrowserTransport` does not retain temporary `JSClosure` bridges beyond synchronous JavaScript header iteration, using explicit release on JavaScriptKit no-weakrefs builds.
-- `BrowserTransport` keeps the same typed API surface on unsupported builds, but all methods throw `ClientError.unsupportedPlatform`.
+- `BrowserTransport` keeps the same raw API surface on unsupported builds, but all methods throw `ClientError.unsupportedPlatform`.
 - `HTTPResponse` preserves status code, headers, final response URL, and optional byte body.
 
 ## Validation Model

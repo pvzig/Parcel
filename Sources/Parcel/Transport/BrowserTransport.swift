@@ -4,25 +4,74 @@ import Foundation
   import JavaScriptEventLoop
   @preconcurrency import JavaScriptKit
 
-  public struct BrowserTransport: ResponseDecodingTransport {
+  public struct BrowserTransport: Transport {
     private struct FetchContext {
       let responseObject: JSObject
-      let abortController: AbortControllerHandle
+      let abortState: AbortState
     }
 
-    private final class AbortControllerHandle: @unchecked Sendable {
+    private final class AbortState: @unchecked Sendable {
       private let controller: JSObject
+      private var timedOut = false
+      private var timeoutHandle: JSValue?
+      private var timeoutClosure: JSClosure?
 
       init(controller: JSObject) {
         self.controller = controller
+      }
+
+      deinit {
+        clearTimeout()
       }
 
       var signal: JSValue {
         controller.signal
       }
 
+      var didTimeOut: Bool {
+        timedOut
+      }
+
+      func armTimeout(_ timeout: Duration) throws {
+        guard let setTimeout = JSObject.global["setTimeout"].function else {
+          throw ClientError.invalidJavaScriptContext
+        }
+
+        clearTimeout()
+
+        let timeoutClosure = JSClosure { [weak self] _ in
+          self?.timedOut = true
+          self?.abort()
+          return .undefined
+        }
+        self.timeoutClosure = timeoutClosure
+        timeoutHandle = setTimeout(timeoutClosure, timeoutMilliseconds(timeout))
+      }
+
       func abort() {
+        clearTimeout()
         _ = controller["abort"]?()
+      }
+
+      private func clearTimeout() {
+        if let timeoutHandle {
+          _ = JSObject.global["clearTimeout"]?(timeoutHandle)
+          self.timeoutHandle = nil
+        }
+
+        if let timeoutClosure {
+          #if JAVASCRIPTKIT_WITHOUT_WEAKREFS
+            timeoutClosure.release()
+          #endif
+          self.timeoutClosure = nil
+        }
+      }
+
+      private func timeoutMilliseconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        let seconds = Double(components.seconds) * 1_000
+        let attoseconds = Double(components.attoseconds) / 1_000_000_000_000_000
+        return max(0, seconds + attoseconds)
       }
     }
 
@@ -50,7 +99,7 @@ import Foundation
       let url = responseURL(from: responseObject)
       let body = try await readBody(
         from: responseObject,
-        abortController: context.abortController
+        abortState: context.abortState
       )
 
       return HTTPResponse(
@@ -61,60 +110,6 @@ import Foundation
       )
     }
 
-    public func sendResponse<Response: Decodable>(
-      _ request: HTTPRequest,
-      expecting responseType: Response.Type
-    ) async throws -> DecodedResponse<Response> {
-      let context = try await fetchResponseObject(for: request)
-      let responseObject = context.responseObject
-      let statusCode = statusCode(from: responseObject)
-      let headers = readHeaders(from: responseObject)
-      let url = responseURL(from: responseObject)
-      guard (200..<300).contains(statusCode) else {
-        throw try await makeStatusError(
-          from: responseObject,
-          statusCode: statusCode,
-          abortController: context.abortController
-        )
-      }
-
-      let body = try await readSuccessfulBody(
-        from: responseObject,
-        abortController: context.abortController
-      )
-      let response = HTTPResponse(
-        statusCode: statusCode,
-        headers: headers,
-        url: url,
-        body: body
-      )
-
-      if let body, body.isEmpty == false {
-        if responseType == EmptyResponse.self {
-          let decodedEmptyResponse = try JSONDecoder().decode(EmptyResponse.self, from: body)
-          guard let emptyResponse = decodedEmptyResponse as? Response else {
-            throw ClientError.invalidResponseBody
-          }
-          return DecodedResponse(value: emptyResponse, response: response)
-        }
-
-        let jsonValue = try await readJSONValue(
-          from: responseObject,
-          abortController: context.abortController
-        )
-        let value = try JSValueDecoder().decode(responseType, from: jsonValue)
-        return DecodedResponse(value: value, response: response)
-      }
-
-      if responseType == EmptyResponse.self,
-        let emptyResponse = EmptyResponse() as? Response
-      {
-        return DecodedResponse(value: emptyResponse, response: response)
-      }
-
-      throw ClientError.emptyResponseBody
-    }
-
     private func fetchResponseObject(for request: HTTPRequest) async throws -> FetchContext {
       Self.installExecutorIfNeeded()
       guard let fetch = JSObject.global.fetch.function,
@@ -123,10 +118,13 @@ import Foundation
         throw ClientError.invalidJavaScriptContext
       }
 
-      let abortController = try makeAbortController()
+      let abortState = try makeAbortController()
+      if let timeout = request.options.timeout {
+        try abortState.armTimeout(timeout)
+      }
       let options = objectConstructor.new()
       options["method"] = .string(request.method.rawValue)
-      options["signal"] = abortController.signal
+      options["signal"] = abortState.signal
 
       if request.headers.isEmpty == false {
         let headers = objectConstructor.new()
@@ -136,7 +134,19 @@ import Foundation
         options["headers"] = .object(headers)
       }
 
-      if let body = request.body {
+      if let mode = request.options.mode {
+        options["mode"] = .string(mode.rawValue)
+      }
+
+      if let credentials = request.options.credentials {
+        options["credentials"] = .string(credentials.rawValue)
+      }
+
+      if let cache = request.options.cache {
+        options["cache"] = .string(cache.rawValue)
+      }
+
+      if let body = request.body, body.isEmpty == false {
         options["body"] = JSTypedArray<UInt8>(body).jsValue
       }
 
@@ -148,7 +158,7 @@ import Foundation
 
       let responseValue = try await resolvePromise(
         responsePromise,
-        abortController: abortController
+        abortState: abortState
       )
       guard let responseObject = responseValue.object else {
         throw ClientError.invalidFetchResponse
@@ -156,16 +166,16 @@ import Foundation
 
       return FetchContext(
         responseObject: responseObject,
-        abortController: abortController
+        abortState: abortState
       )
     }
 
-    private func readHeaders(from responseObject: JSObject) -> [String: String] {
+    private func readHeaders(from responseObject: JSObject) -> HTTPHeaders {
       guard let headersObject = responseObject.headers.object else {
-        return [:]
+        return .init()
       }
 
-      var headers: [String: String] = [:]
+      var headers = HTTPHeaders()
       let collector = JSClosure { arguments in
         guard arguments.count >= 2,
           let value = arguments[0].string,
@@ -174,7 +184,7 @@ import Foundation
           return .undefined
         }
 
-        headers[key] = value
+        headers.add(name: key, value: value)
         return .undefined
       }
       #if JAVASCRIPTKIT_WITHOUT_WEAKREFS
@@ -189,7 +199,7 @@ import Foundation
 
     private func readBody(
       from responseObject: JSObject,
-      abortController: AbortControllerHandle
+      abortState: AbortState
     ) async throws -> Data? {
       guard let uint8ArrayConstructor = JSObject.global.Uint8Array.object else {
         throw ClientError.invalidJavaScriptContext
@@ -203,7 +213,7 @@ import Foundation
 
       let arrayBuffer = try await resolvePromise(
         arrayBufferPromise,
-        abortController: abortController,
+        abortState: abortState,
         operation: .bytes
       )
       let bytesArray = uint8ArrayConstructor.new(arrayBuffer)
@@ -211,37 +221,9 @@ import Foundation
         .withUnsafeBytes(Data.init(buffer:))
     }
 
-    private func readSuccessfulBody(
-      from responseObject: JSObject,
-      abortController: AbortControllerHandle
-    ) async throws -> Data? {
-      let clonedResponseObject = try cloneResponseObject(from: responseObject)
-      return try await readBody(
-        from: clonedResponseObject,
-        abortController: abortController
-      )
-    }
-
-    private func readJSONValue(
-      from responseObject: JSObject,
-      abortController: AbortControllerHandle
-    ) async throws -> JSValue {
-      guard let jsonPromiseObject = responseObject["json"]?().object,
-        let jsonPromise = JSPromise(jsonPromiseObject)
-      else {
-        throw ClientError.invalidResponseBody
-      }
-
-      return try await resolvePromise(
-        jsonPromise,
-        abortController: abortController,
-        operation: .json
-      )
-    }
-
     private func readTextBody(
       from responseObject: JSObject,
-      abortController: AbortControllerHandle
+      abortState: AbortState
     ) async throws -> String? {
       guard let textPromiseObject = responseObject["text"]?().object,
         let textPromise = JSPromise(textPromiseObject)
@@ -251,7 +233,7 @@ import Foundation
 
       return try await resolvePromise(
         textPromise,
-        abortController: abortController,
+        abortState: abortState,
         operation: .text
       ).string
     }
@@ -259,42 +241,36 @@ import Foundation
     private func makeStatusError(
       from responseObject: JSObject,
       statusCode: Int,
-      abortController: AbortControllerHandle
+      abortState: AbortState
     ) async throws -> ClientError {
       do {
         let body = try await readTextBody(
           from: responseObject,
-          abortController: abortController
+          abortState: abortState
         )
         return .unsuccessfulStatusCode(statusCode, body: body)
       } catch is CancellationError {
         throw CancellationError()
+      } catch let error as ClientError where error == .timedOut {
+        throw error
       } catch {
         return .unsuccessfulStatusCode(statusCode, body: nil)
       }
     }
 
-    private func cloneResponseObject(from responseObject: JSObject) throws -> JSObject {
-      guard let clonedResponseObject = responseObject["clone"]?().object else {
-        throw ClientError.invalidResponseBody
-      }
-
-      return clonedResponseObject
-    }
-
-    private func makeAbortController() throws -> AbortControllerHandle {
+    private func makeAbortController() throws -> AbortState {
       guard let abortControllerConstructor = JSObject.global.AbortController.function else {
         throw ClientError.invalidJavaScriptContext
       }
 
-      return AbortControllerHandle(
+      return AbortState(
         controller: abortControllerConstructor.new()
       )
     }
 
     private func resolvePromise(
       _ promise: JSPromise,
-      abortController: AbortControllerHandle,
+      abortState: AbortState,
       operation: ClientError.ResponseBodyFailure.Operation? = nil
     ) async throws -> JSValue {
       do {
@@ -304,13 +280,16 @@ import Foundation
           try Task.checkCancellation()
           return value
         } onCancel: {
-          abortController.abort()
+          abortState.abort()
         }
       } catch is CancellationError {
-        abortController.abort()
+        abortState.abort()
         throw CancellationError()
       } catch let error as JSException {
         if isAbortError(error) {
+          if abortState.didTimeOut {
+            throw ClientError.timedOut
+          }
           throw CancellationError()
         }
         if let operation {
@@ -372,19 +351,12 @@ import Foundation
     }
   }
 #else
-  public struct BrowserTransport: ResponseDecodingTransport {
+  public struct BrowserTransport: Transport {
     public static let isSupportedRuntime = false
 
     public init() {}
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-      throw ClientError.unsupportedPlatform
-    }
-
-    public func sendResponse<Response: Decodable>(
-      _ request: HTTPRequest,
-      expecting responseType: Response.Type
-    ) async throws -> DecodedResponse<Response> {
       throw ClientError.unsupportedPlatform
     }
   }

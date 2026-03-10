@@ -61,9 +61,35 @@
       #expect(request.bodyText == #"{"pagePath":"/posts/example"}"#)
     }
 
-    @Test func browserTransportTypedSendDecodesJSONResponses() async throws {
+    @Test func browserTransportSendAppliesFetchOptions() async throws {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(statusCode: 204)
+
+      _ = try await transport.send(
+        HTTPRequest(
+          method: .get,
+          url: "https://example.com/status",
+          options: HTTPRequestOptions(
+            mode: .noCORS,
+            credentials: .include,
+            cache: .reload
+          )
+        )
+      )
+      let request = try #require(harness.recordedRequests().first)
+
+      #expect(request.mode == "no-cors")
+      #expect(request.credentials == "include")
+      #expect(request.cache == "reload")
+    }
+
+    @Test func clientDecodePathOverBrowserTransportDecodesJSONResponses() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -73,7 +99,7 @@
         jsonBody: #"{"statusUrl":"https://example.com/status"}"#
       )
 
-      let accepted = try await transport.sendResponse(
+      let accepted = try await client.sendResponse(
         HTTPRequest(method: .get, url: "https://example.com/status"),
         expecting: GenerateAccepted.self
       )
@@ -88,9 +114,12 @@
       )
     }
 
-    @Test func browserTransportTypedSendPreservesJSONPromiseFailures() async throws {
+    @Test func clientDecodePathOverBrowserTransportUsesJSONDecoderForInvalidJSONPayloads()
+      async throws
+    {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -100,26 +129,23 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await transport.sendResponse(
+        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
           HTTPRequest(method: .get, url: "https://example.com/status"),
           expecting: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
-      } catch let error as ClientError {
-        guard case .responseBodyFailure(let failure) = error else {
-          Issue.record("Expected response body failure, got \(error)")
-          return
-        }
-
-        #expect(failure.operation == .json)
-        #expect(failure.javaScriptError.name == "SyntaxError")
-        #expect(failure.javaScriptError.message != nil)
+      } catch is DecodingError {
+      } catch {
+        Issue.record("Expected decoding error, got \(error)")
       }
     }
 
-    @Test func browserTransportTypedSendThrowsEmptyResponseBodyForEmptySuccessBody() async throws {
+    @Test func clientDecodePathOverBrowserTransportThrowsEmptyResponseBodyForEmptySuccessBody()
+      async throws
+    {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -128,7 +154,7 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await transport.sendResponse(
+        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
           HTTPRequest(method: .get, url: "https://example.com/status"),
           expecting: GenerateAccepted.self
         )
@@ -138,14 +164,17 @@
       }
     }
 
-    @Test func browserTransportTypedSendReturnsEmptyResponseForEmptySuccessBody() async throws {
+    @Test func clientDecodePathOverBrowserTransportReturnsEmptyResponseForEmptySuccessBody()
+      async throws
+    {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(statusCode: 204)
 
-      let response = try await transport.sendResponse(
+      let response = try await client.sendResponse(
         HTTPRequest(method: .delete, url: "https://example.com/status"),
         expecting: EmptyResponse.self
       )
@@ -154,9 +183,12 @@
       #expect(try #require(response.response.body).isEmpty)
     }
 
-    @Test func browserTransportTypedSendValidatesNonJSONPayloadForEmptyResponse() async throws {
+    @Test func clientDecodePathOverBrowserTransportValidatesNonJSONPayloadForEmptyResponse()
+      async throws
+    {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -165,7 +197,7 @@
       )
 
       do {
-        let _: DecodedResponse<EmptyResponse> = try await transport.sendResponse(
+        let _: DecodedResponse<EmptyResponse> = try await client.sendResponse(
           HTTPRequest(method: .get, url: "https://example.com/status"),
           expecting: EmptyResponse.self
         )
@@ -213,9 +245,39 @@
       #expect(request.aborted)
     }
 
-    @Test func browserTransportTypedSendTurnsFailingStatusesIntoClientErrors() async throws {
+    @Test func browserTransportSendTimesOutFetches() async throws {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        behavior: .init(fetchDelayMilliseconds: 500)
+      )
+
+      do {
+        _ = try await transport.send(
+          HTTPRequest(
+            method: .get,
+            url: "https://example.com/status",
+            options: HTTPRequestOptions(timeout: .milliseconds(50))
+          )
+        )
+        Issue.record("Expected request to time out")
+      } catch let error as ClientError {
+        #expect(error == .timedOut)
+      }
+
+      let request = try #require(harness.recordedRequests().first)
+      #expect(request.aborted)
+    }
+
+    @Test func clientDecodePathOverBrowserTransportTurnsFailingStatusesIntoClientErrors()
+      async throws
+    {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -225,7 +287,7 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await transport.sendResponse(
+        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
           HTTPRequest(method: .get, url: "https://example.com/status"),
           expecting: GenerateAccepted.self
         )

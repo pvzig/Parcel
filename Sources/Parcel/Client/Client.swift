@@ -21,26 +21,45 @@ public struct Client: Sendable {
 
   public func get<Response: Decodable>(
     from url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
       .get,
       to: url,
       headers: headers,
+      options: options,
+      expecting: responseType
+    ).value
+  }
+
+  public func head<Response: Decodable>(
+    from url: String,
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
+    expecting responseType: Response.Type = Response.self
+  ) async throws -> Response {
+    try await sendResponse(
+      .head,
+      to: url,
+      headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
 
   public func delete<Response: Decodable>(
     from url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
       .delete,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
@@ -48,7 +67,8 @@ public struct Client: Sendable {
   public func post<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
@@ -56,6 +76,7 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
@@ -63,7 +84,8 @@ public struct Client: Sendable {
   public func put<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
@@ -71,6 +93,7 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
@@ -78,7 +101,8 @@ public struct Client: Sendable {
   public func patch<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
@@ -86,32 +110,52 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
 
   public func getResponse<Response: Decodable>(
     from url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await sendResponse(
       .get,
       to: url,
       headers: headers,
+      options: options,
+      expecting: responseType
+    )
+  }
+
+  public func headResponse<Response: Decodable>(
+    from url: String,
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
+    expecting responseType: Response.Type = Response.self
+  ) async throws -> DecodedResponse<Response> {
+    try await sendResponse(
+      .head,
+      to: url,
+      headers: headers,
+      options: options,
       expecting: responseType
     )
   }
 
   public func deleteResponse<Response: Decodable>(
     from url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await sendResponse(
       .delete,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     )
   }
@@ -119,7 +163,8 @@ public struct Client: Sendable {
   public func postResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await sendResponse(
@@ -127,6 +172,7 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     )
   }
@@ -134,7 +180,8 @@ public struct Client: Sendable {
   public func putResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await sendResponse(
@@ -142,6 +189,7 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     )
   }
@@ -149,7 +197,8 @@ public struct Client: Sendable {
   public func patchResponse<Request: Encodable, Response: Decodable>(
     _ body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await sendResponse(
@@ -157,20 +206,34 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     )
+  }
+
+  public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+    try await transport.send(prepare(request))
+  }
+
+  public func sendResponse<Response: Decodable>(
+    _ request: HTTPRequest,
+    expecting responseType: Response.Type = Response.self
+  ) async throws -> DecodedResponse<Response> {
+    try await execute(prepare(request), expecting: responseType)
   }
 
   public func send<Response: Decodable>(
     _ method: HTTPMethod,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
       method,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
@@ -178,22 +241,27 @@ public struct Client: Sendable {
   public func sendResponse<Response: Decodable>(
     _ method: HTTPMethod,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
-    let request = HTTPRequest(
-      method: method,
-      url: url,
-      headers: mergedHeaders(additionalHeaders: headers, includesJSONBody: false)
+    try await execute(
+      makeRequest(
+        method: method,
+        url: url,
+        headers: headers,
+        options: options
+      ),
+      expecting: responseType
     )
-    return try await execute(request, expecting: responseType)
   }
 
   public func send<Request: Encodable, Response: Decodable>(
     _ method: HTTPMethod,
     body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> Response {
     try await sendResponse(
@@ -201,6 +269,7 @@ public struct Client: Sendable {
       body: body,
       to: url,
       headers: headers,
+      options: options,
       expecting: responseType
     ).value
   }
@@ -209,32 +278,27 @@ public struct Client: Sendable {
     _ method: HTTPMethod,
     body: Request,
     to url: String,
-    headers: [String: String] = [:],
+    headers: HTTPHeaders = [:],
+    options: HTTPRequestOptions = .init(),
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     let encoder = configuration.jsonCoding.makeEncoder()
-    let request = HTTPRequest(
-      method: method,
-      url: url,
-      headers: mergedHeaders(additionalHeaders: headers, includesJSONBody: true),
-      body: try encoder.encode(body)
+    return try await execute(
+      makeRequest(
+        method: method,
+        url: url,
+        headers: headers,
+        body: try encoder.encode(body),
+        options: options
+      ),
+      expecting: responseType
     )
-    return try await execute(request, expecting: responseType)
   }
 
   private func execute<Response: Decodable>(
     _ request: HTTPRequest,
     expecting responseType: Response.Type
   ) async throws -> DecodedResponse<Response> {
-    if configuration.jsonCoding.prefersTransportSpecificResponseDecoding,
-      let responseDecodingTransport = transport as? any ResponseDecodingTransport
-    {
-      return try await responseDecodingTransport.sendResponse(
-        request,
-        expecting: responseType
-      )
-    }
-
     let response = try await transport.send(request)
     return try decode(response, as: responseType)
   }
@@ -262,40 +326,37 @@ public struct Client: Sendable {
     throw ClientError.emptyResponseBody
   }
 
-  private func mergedHeaders(
-    additionalHeaders: [String: String],
-    includesJSONBody: Bool
-  ) -> [String: String] {
+  private func mergedHeaders(additionalHeaders: HTTPHeaders) -> HTTPHeaders {
     var headers = configuration.defaultHeaders
 
-    for (name, value) in additionalHeaders {
-      setHeader(name, value: value, in: &headers)
-    }
-
-    if containsHeader(named: "Accept", in: headers) == false {
-      headers["Accept"] = "application/json"
-    }
-
-    if includesJSONBody && containsHeader(named: "Content-Type", in: headers) == false {
-      headers["Content-Type"] = "application/json"
-    }
+    headers.merge(overridingWith: additionalHeaders)
 
     return headers
   }
 
-  private func containsHeader(named headerName: String, in headers: [String: String]) -> Bool {
-    headers.keys.contains { $0.lowercased() == headerName.lowercased() }
+  private func makeRequest(
+    method: HTTPMethod,
+    url: String,
+    headers: HTTPHeaders,
+    body: Data? = nil,
+    options: HTTPRequestOptions
+  ) -> HTTPRequest {
+    HTTPRequest(
+      method: method,
+      url: url,
+      headers: mergedHeaders(additionalHeaders: headers),
+      body: body,
+      options: options
+    )
   }
 
-  private func setHeader(
-    _ name: String,
-    value: String,
-    in headers: inout [String: String]
-  ) {
-    if let existingName = headers.keys.first(where: { $0.lowercased() == name.lowercased() }) {
-      headers.removeValue(forKey: existingName)
-    }
-
-    headers[name] = value
+  private func prepare(_ request: HTTPRequest) -> HTTPRequest {
+    HTTPRequest(
+      method: request.method,
+      url: request.url,
+      headers: mergedHeaders(additionalHeaders: request.headers),
+      body: request.body,
+      options: request.options
+    )
   }
 }
