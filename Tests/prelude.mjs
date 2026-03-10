@@ -321,6 +321,13 @@ function makeResponse(url, requestRecord, signal) {
         },
       });
     },
+    clone() {
+      if (this !== response) {
+        throw makeNamedError("TypeError", "Illegal invocation");
+      }
+
+      return makeResponse(url, requestRecord, signal);
+    },
   };
 
   return response;

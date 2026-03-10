@@ -82,6 +82,10 @@
       #expect(accepted.response.statusCode == 200)
       #expect(accepted.response.headers["content-type"] == "application/json")
       #expect(accepted.response.url == "https://example.com/status")
+      #expect(
+        String(data: try #require(accepted.response.body), encoding: .utf8)
+          == #"{"statusUrl":"https://example.com/status"}"#
+      )
     }
 
     @Test func browserTransportTypedSendPreservesJSONPromiseFailures() async throws {
@@ -110,6 +114,65 @@
         #expect(failure.operation == .json)
         #expect(failure.javaScriptError.name == "SyntaxError")
         #expect(failure.javaScriptError.message != nil)
+      }
+    }
+
+    @Test func browserTransportTypedSendThrowsEmptyResponseBodyForEmptySuccessBody() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        headers: ["content-type": "application/json"]
+      )
+
+      do {
+        let _: DecodedResponse<GenerateAccepted> = try await transport.sendResponse(
+          HTTPRequest(method: .get, url: "https://example.com/status"),
+          expecting: GenerateAccepted.self
+        )
+        Issue.record("Expected request to throw")
+      } catch let error as ClientError {
+        #expect(error == .emptyResponseBody)
+      }
+    }
+
+    @Test func browserTransportTypedSendReturnsEmptyResponseForEmptySuccessBody() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(statusCode: 204)
+
+      let response = try await transport.sendResponse(
+        HTTPRequest(method: .delete, url: "https://example.com/status"),
+        expecting: EmptyResponse.self
+      )
+
+      #expect(response.value == EmptyResponse())
+      #expect(try #require(response.response.body).isEmpty)
+    }
+
+    @Test func browserTransportTypedSendValidatesNonJSONPayloadForEmptyResponse() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        bodyText: "accepted"
+      )
+
+      do {
+        let _: DecodedResponse<EmptyResponse> = try await transport.sendResponse(
+          HTTPRequest(method: .get, url: "https://example.com/status"),
+          expecting: EmptyResponse.self
+        )
+        Issue.record("Expected request to throw")
+      } catch is DecodingError {
+      } catch {
+        Issue.record("Expected decoding error, got \(error)")
       }
     }
 

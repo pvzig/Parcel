@@ -34,6 +34,7 @@ Parcel exposes:
 - `ClientConfiguration` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
 - When `prefersTransportSpecificResponseDecoding` is `true` and the active transport supports it, `Client` uses the transport's typed decode path instead of round-tripping successful JSON through `Data`.
 - When `prefersTransportSpecificResponseDecoding` is `false`, `Client` always decodes response bytes with the configured `JSONDecoder`.
+- Successful typed responses preserve the raw `HTTPResponse.body` bytes across both the generic decode path and transport-specific decode paths.
 - Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for body reads and `response.json()`.
 - Browser request or response-body cancellation throws `CancellationError`.
 
@@ -45,7 +46,9 @@ Parcel exposes:
 - `BrowserTransport` uses the browser `fetch` API.
 - `BrowserTransport.isSupportedRuntime` accepts both window and worker-style JavaScript global scopes when `fetch`, `AbortController`, `Object`, and `Uint8Array` are available.
 - `BrowserTransport` installs JavaScriptKit's global event-loop executor when initialized in a supported runtime.
-- For typed client requests, `BrowserTransport` decodes successful JSON responses via `response.json()` and `JSValueDecoder`.
+- For typed client requests, `BrowserTransport` clones successful responses so decoded responses retain raw response bytes while still decoding non-empty JSON payloads via `response.json()` and `JSValueDecoder`.
+- `BrowserTransport` throws `ClientError.emptyResponseBody` for successful empty bodies when the caller expects a non-`EmptyResponse` model, matching the generic client decode path.
+- `BrowserTransport` validates non-empty `EmptyResponse` payloads as JSON rather than silently discarding malformed bodies.
 - Raw transport responses remain available as byte bodies via `arrayBuffer()`.
 - `BrowserTransport` binds JavaScript instance method calls through JavaScriptKit member-call helpers so browser methods receive the correct `this` value.
 - `BrowserTransport` threads an `AbortController` signal through `fetch` and response-body reads so Swift task cancellation aborts the browser request and body consumption.

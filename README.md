@@ -23,7 +23,7 @@ let client = Client()
 
 let accepted: AcceptedResponse = try await client.post(
     GenerateRequest(pagePath: "/posts/example"),
-    to: functionURL
+    to: "https://example.com/api/generate"
 )
 ```
 
@@ -32,7 +32,7 @@ If you need response metadata like headers or the final URL:
 ```swift
 let accepted = try await client.postResponse(
     GenerateRequest(pagePath: "/posts/example"),
-    to: functionURL,
+    to: "https://example.com/api/generate",
     expecting: AcceptedResponse.self
 )
 
@@ -48,7 +48,7 @@ On the browser transport path, `response.json()`, `response.text()`, and `respon
 For successful responses with no body, use `EmptyResponse`:
 
 ```swift
-let _: EmptyResponse = try await client.delete(from: functionURL)
+let _: EmptyResponse = try await client.delete(from: "https://example.com/api/delete")
 ```
 
 If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure it through `ClientConfiguration`:

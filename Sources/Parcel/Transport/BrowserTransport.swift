@@ -78,11 +78,33 @@ import Foundation
         )
       }
 
+      let body = try await readSuccessfulBody(
+        from: responseObject,
+        abortController: context.abortController
+      )
       let response = HTTPResponse(
         statusCode: statusCode,
         headers: headers,
-        url: url
+        url: url,
+        body: body
       )
+
+      if let body, body.isEmpty == false {
+        if responseType == EmptyResponse.self {
+          let decodedEmptyResponse = try JSONDecoder().decode(EmptyResponse.self, from: body)
+          guard let emptyResponse = decodedEmptyResponse as? Response else {
+            throw ClientError.invalidResponseBody
+          }
+          return DecodedResponse(value: emptyResponse, response: response)
+        }
+
+        let jsonValue = try await readJSONValue(
+          from: responseObject,
+          abortController: context.abortController
+        )
+        let value = try JSValueDecoder().decode(responseType, from: jsonValue)
+        return DecodedResponse(value: value, response: response)
+      }
 
       if responseType == EmptyResponse.self,
         let emptyResponse = EmptyResponse() as? Response
@@ -90,12 +112,7 @@ import Foundation
         return DecodedResponse(value: emptyResponse, response: response)
       }
 
-      let jsonValue = try await readJSONValue(
-        from: responseObject,
-        abortController: context.abortController
-      )
-      let value = try JSValueDecoder().decode(responseType, from: jsonValue)
-      return DecodedResponse(value: value, response: response)
+      throw ClientError.emptyResponseBody
     }
 
     private func fetchResponseObject(for request: HTTPRequest) async throws -> FetchContext {
@@ -194,6 +211,17 @@ import Foundation
         .withUnsafeBytes(Data.init(buffer:))
     }
 
+    private func readSuccessfulBody(
+      from responseObject: JSObject,
+      abortController: AbortControllerHandle
+    ) async throws -> Data? {
+      let clonedResponseObject = try cloneResponseObject(from: responseObject)
+      return try await readBody(
+        from: clonedResponseObject,
+        abortController: abortController
+      )
+    }
+
     private func readJSONValue(
       from responseObject: JSObject,
       abortController: AbortControllerHandle
@@ -244,6 +272,14 @@ import Foundation
       } catch {
         return .unsuccessfulStatusCode(statusCode, body: nil)
       }
+    }
+
+    private func cloneResponseObject(from responseObject: JSObject) throws -> JSObject {
+      guard let clonedResponseObject = responseObject["clone"]?().object else {
+        throw ClientError.invalidResponseBody
+      }
+
+      return clonedResponseObject
     }
 
     private func makeAbortController() throws -> AbortControllerHandle {

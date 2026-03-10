@@ -164,6 +164,35 @@
     #expect(response == EmptyResponse())
   }
 
+  @Test func emptySuccessfulBodyThrowsEmptyResponseBodyWhenExpectingModel() async throws {
+    let transport = RecordingTransport(
+      response: HTTPResponse(statusCode: 200, body: Data())
+    )
+    let client = Client(transport: transport)
+
+    do {
+      let _: GenerateAccepted = try await client.get(from: "https://example.com/status")
+      Issue.record("Expected request to throw")
+    } catch let error as ClientError {
+      #expect(error == .emptyResponseBody)
+    }
+  }
+
+  @Test func invalidJSONBodyDoesNotSilentlyDecodeAsEmptyResponse() async throws {
+    let transport = RecordingTransport(
+      response: HTTPResponse(statusCode: 200, body: Data("accepted".utf8))
+    )
+    let client = Client(transport: transport)
+
+    do {
+      let _: EmptyResponse = try await client.get(from: "https://example.com/status")
+      Issue.record("Expected request to throw")
+    } catch is DecodingError {
+    } catch {
+      Issue.record("Expected decoding error, got \(error)")
+    }
+  }
+
   @Test func unsuccessfulStatusThrowsClientError() async throws {
     let transport = RecordingTransport(
       response: HTTPResponse(statusCode: 503, body: Data("unavailable".utf8))
