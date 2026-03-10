@@ -3,6 +3,7 @@
 Instructions for coding agents working on this repo.
 
 ## Validating Changes
+- Run the swift-build skill
 - Run the swift-format skill
 - Run the swift-test skill
 - Keep `SPEC.md` up-to-date when making changes.

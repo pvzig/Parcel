@@ -1,8 +1,15 @@
 .DS_Store
-/.build
 /Packages
+Package.resolved
 xcuserdata/
 DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+/.build
+/.build-xcode-tests
+/.build-standalone
+/.build-wasm-node
+/.build-wasm-node-run
+/.build-wasm-tests
+/.build-xcode-build

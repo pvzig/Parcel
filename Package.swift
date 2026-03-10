@@ -1,22 +1,64 @@
 // swift-tools-version: 6.2
 
+import Foundation
 import PackageDescription
+
+let wasmTestingLinkerFlags: [LinkerSetting] = [
+  .unsafeFlags(
+    [
+      "-Xlinker", "--stack-first",
+      "-Xlinker", "--global-base=524288",
+      "-Xlinker", "-z",
+      "-Xlinker", "stack-size=524288",
+    ],
+    .when(platforms: [.wasi])
+  )
+]
+
+let includeWasmBrowserTests =
+  ProcessInfo.processInfo.environment["PARCEL_INCLUDE_WASM_TESTS"] == "1"
+
+var packageTargets: [Target] = [
+  .target(
+    name: "Parcel",
+    dependencies: [
+      .product(name: "JavaScriptEventLoop", package: "JavaScriptKit"),
+      .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+    ]
+  ),
+  .testTarget(
+    name: "ParcelHostTests",
+    dependencies: ["Parcel"]
+  ),
+]
+
+if includeWasmBrowserTests {
+  packageTargets.append(
+    .testTarget(
+      name: "ParcelBrowserTests",
+      dependencies: [
+        "Parcel",
+        .product(name: "JavaScriptEventLoopTestSupport", package: "JavaScriptKit"),
+        .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+      ],
+      linkerSettings: wasmTestingLinkerFlags
+    )
+  )
+}
 
 let package = Package(
   name: "Parcel",
+  platforms: [
+    .macOS(.v13)
+  ],
   products: [
     .library(
       name: "Parcel",
       targets: ["Parcel"]
     )
   ],
-  targets: [
-    .target(
-      name: "Parcel"
-    ),
-    .testTarget(
-      name: "ParcelTests",
-      dependencies: ["Parcel"]
-    ),
-  ]
+  dependencies: [
+    .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.46.5")
+  ],
+  targets: packageTargets
 )
