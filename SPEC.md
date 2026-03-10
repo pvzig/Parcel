@@ -36,7 +36,7 @@ Parcel exposes:
 - `Client.sendResponse(_ request: HTTPRequest, body:timeout:, expecting:)` decodes a caller-provided raw request while appending the configured default `Accept` header values when the request does not already provide them.
 - Raw request and response bodies travel separately from `swift-http-types` heads as `HTTPBody?`.
 - Typed request bodies are encoded with the configured `BodyCodec` and wrapped in `HTTPBody`.
-- Typed response bodies are decoded by collecting the response `HTTPBody` and passing the resulting bytes through the configured `BodyCodec`.
+- Typed response bodies are decoded by collecting the response `HTTPBody` up to `maximumBufferedBodyBytes` and passing the resulting bytes through the configured `BodyCodec`.
 - `BodyCodingConfiguration` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
 - `BodyCodingConfiguration` provides convenience factories for JSON, form URL-encoded, plain-text, and raw-data body coding.
 - `ClientConfiguration` also carries an optional `defaultTimeout`, which defaults to 90 seconds and is used whenever a per-call timeout is omitted.
@@ -63,7 +63,7 @@ Parcel exposes:
 
 - Core request/response logic is transport-driven via `Transport`.
 - `Transport.send(_:, body:timeout:)` returns `TransportResponse`, which contains a raw `HTTPResponse`, an optional `HTTPBody`, and the final response `URL?`, regardless of the HTTP status code.
-- `Client(configuration:)` is only available when Parcel can select the built-in browser transport; host builds must inject an explicit `Transport`.
+- `Client(configuration:)` is only available on `wasm32` builds that include Parcel's browser transport dependencies; host builds must inject an explicit `Transport`.
 - `BrowserTransport` is only exposed on `wasm32` builds with Parcel's browser transport dependencies available.
 - The default transport is `BrowserTransport` only on `wasm32` builds with a browser-capable JavaScript runtime.
 - `BrowserTransport` uses the browser `fetch` API.
@@ -72,7 +72,7 @@ Parcel exposes:
 - `BrowserTransport` accepts an optional per-request timeout and enforces it with `AbortController` plus `setTimeout`.
 - `BrowserTransport` passes outgoing headers to `fetch` as an ordered header-entry list so repeated field names preserve their semantics instead of collapsing to the last value.
 - Because typed decoding collects response bytes from `HTTPBody`, the generic client decode path handles empty-response and malformed-payload behavior consistently for browser requests regardless of the configured codec.
-- Raw transport responses remain available as `HTTPBody`, which may be single-iteration depending on the transport.
+- Raw transport responses remain available as `HTTPBody?`, which may be single-iteration depending on the transport.
 - `BrowserTransport` binds JavaScript instance method calls through JavaScriptKit member-call helpers so browser methods receive the correct `this` value.
 - `BrowserTransport` threads an `AbortController` signal through `fetch` and response-body reads so Swift task cancellation aborts the browser request and body consumption.
 - `BrowserTransport` exposes response bodies lazily as single-iteration `HTTPBody` values backed by `ReadableStream.getReader()`.
