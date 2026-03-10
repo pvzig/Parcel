@@ -2,7 +2,7 @@
 
 ## Objective
 
-Parcel is a small browser HTTP client for SwiftWASM that wraps the browser Fetch API with typed request and response codecs.
+Parcel is a browser HTTP client for SwiftWASM that wraps the browser Fetch API with typed request and response codecs.
 
 ## Public API
 

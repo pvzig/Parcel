@@ -1,7 +1,6 @@
 # Parcel
 
-Parcel is a small browser HTTP client for SwiftWASM with pluggable typed body codecs. It
-defaults to JSON for `Encodable` request bodies and `Decodable` responses.
+Parcel is a small browser HTTP client for SwiftWASM with pluggable typed body codecs. It defaults to JSON for `Encodable` request bodies and `Decodable` responses.
 
 ## Usage
 
@@ -47,13 +46,9 @@ let finalURL = accepted.url
 let value = accepted.value
 ```
 
-Typed decode consumes the response body once. `DecodedResponse` preserves the decoded value, the
-response head, and the final URL, but it does not retain raw response bytes after decoding.
+Typed decode consumes the response body once. `DecodedResponse` preserves the decoded value, the response head, and the final URL, but it does not retain raw response bytes after decoding.
 
-If you work directly with raw requests through `Client.send(_:, body:timeout:)`, or with a custom
-`Transport`, you may receive `TransportResponse` values with 4xx or 5xx status codes. Parcel's
-typed `Client` APIs treat non-2xx responses as failures and throw
-`ClientError.unsuccessfulStatusCode` before decoding.
+If you work directly with raw requests through `Client.send(_:, body:timeout:)`, or with a custom `Transport`, you may receive `TransportResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
 
 ```swift
 let request = HTTPRequest(method: .get, url: generateURL)
@@ -63,11 +58,9 @@ let statusCode = response.response.status.code
 let bodyText = try await response.body?.text()
 ```
 
-`HTTPBody.text()` buffers in memory and defaults to a 2 MiB cap. Raise that limit explicitly when
-you expect larger bodies.
+`HTTPBody.text()` buffers in memory and defaults to a 2 MiB cap. Raise that limit explicitly when you expect larger bodies.
 
-On the browser transport path, `ReadableStreamDefaultReader.read()` failures surface as
-`ClientError.responseBodyFailure`, while Swift task cancellation throws `CancellationError`.
+On the browser transport path, `ReadableStreamDefaultReader.read()` failures surface as `ClientError.responseBodyFailure`, while Swift task cancellation throws `CancellationError`.
 
 For successful responses with no body, use `EmptyResponse`:
 
@@ -76,14 +69,9 @@ let deleteURL = URL(string: "https://example.com/api/delete")!
 let _: EmptyResponse = try await client.delete(from: deleteURL)
 ```
 
-Typed requests use the configured body-coding defaults for `Accept` and, when Parcel encodes the
-request body, `Content-Type`. The default configuration uses JSON and sets both to
-`application/json`. Parcel also applies a default request timeout of 90 seconds unless you override
-it per call or set `defaultTimeout` to `nil`. Buffered response decoding and error-body reads use a
-2 MiB default cap, configurable via `ClientConfiguration(maximumBufferedBodyBytes:)`.
+Typed requests use the configured body-coding defaults for `Accept` and, when Parcel encodes the request body, `Content-Type`. The default configuration uses JSON and sets both to `application/json`. Parcel also applies a default request timeout of 90 seconds unless you override it per call or set `defaultTimeout` to `nil`. Buffered response decoding and error-body reads use a 2 MiB default cap, configurable via `ClientConfiguration(maximumBufferedBodyBytes:)`.
 
-If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec`
-through `ClientConfiguration`:
+If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec` through `ClientConfiguration`:
 
 ```swift
 let client = Client(
@@ -118,8 +106,7 @@ let binaryClient = Client(
 )
 ```
 
-`FormURLEncodedBodyCodec` supports flat keyed payloads and repeated keys for array values. Nested
-keyed containers are not supported.
+`FormURLEncodedBodyCodec` supports flat keyed payloads and repeated keys for array values. Nested keyed containers are not supported.
 
 If you need a different typed wire format entirely, provide a custom `BodyCodec`:
 
@@ -151,15 +138,9 @@ let client = Client(
 
 ## Runtime
 
-Parcel is browser-oriented. `Client()` is only compiled on `wasm32` builds that include Parcel's
-browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's
-native unit tests exercise the higher-level client behavior. On `wasm32`, the built-in transport
-supports both window-style and worker-style globals; unsupported JavaScript runtimes fail requests
-with `ClientError.unsupportedPlatform`.
+Parcel is browser-oriented. `Client()` is only compiled on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, the built-in transport supports both window-style and worker-style globals; unsupported JavaScript runtimes fail requests with `ClientError.unsupportedPlatform`.
 
-`BrowserTransport` is likewise only available on those `wasm32` builds. It installs the
-JavaScriptKit executor when it initializes in a supported runtime. If your app uses JavaScriptKit
-async APIs outside Parcel, install the executor during app startup:
+`BrowserTransport` is likewise only available on those `wasm32` builds. It installs the JavaScriptKit executor when it initializes in a supported runtime. If your app uses JavaScriptKit async APIs outside Parcel, install the executor during app startup:
 
 ```swift
 import JavaScriptEventLoop
@@ -167,9 +148,7 @@ import JavaScriptEventLoop
 JavaScriptEventLoop.installGlobalExecutor()
 ```
 
-Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing
-request bodies are still buffered before Parcel passes them to `fetch`, with a 2 MiB default cap
-configurable via `BrowserTransport(maximumBufferedRequestBodyBytes:)`.
+Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing request bodies are still buffered before Parcel passes them to `fetch`, with a 2 MiB default cap configurable via `BrowserTransport(maximumBufferedRequestBodyBytes:)`.
 
 ## Validation
 
