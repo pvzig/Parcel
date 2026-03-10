@@ -122,6 +122,36 @@
       #expect(recordedRequest.bodyText == "publish")
     }
 
+    @Test func browserTransportPreservesDuplicateOutgoingHeadersSemantically() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+      let client = Client(
+        configuration: ClientConfiguration(
+          defaultHeaders: [HTTPField.Name.accept: "application/vnd.parcel+json"]
+        ),
+        transport: transport
+      )
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        headers: ["content-type": "application/json"],
+        url: exampleStatusURL,
+        jsonBody: #"{"statusUrl":"https://example.com/status"}"#
+      )
+
+      let _: GenerateAccepted = try await client.get(
+        from: exampleStatusURL,
+        headers: [.accept: "application/json"]
+      )
+      let recordedRequest = try #require(harness.recordedRequests().first)
+
+      #expect(
+        recordedRequest.headers["Accept"]
+          == "application/vnd.parcel+json, application/json"
+      )
+    }
+
     @Test func clientDecodePathOverBrowserTransportUsesJSONDecoderForInvalidJSONPayloads()
       async throws
     {

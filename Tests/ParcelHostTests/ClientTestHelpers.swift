@@ -142,6 +142,7 @@
   actor RecordingTransport: Transport {
     private(set) var lastRequest: HTTPRequest?
     private(set) var lastBody: Data?
+    private(set) var lastTimeout: Duration?
 
     let response: (response: HTTPResponse, body: Data?, url: URL?)
 
@@ -156,6 +157,7 @@
     ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
       lastRequest = request
       lastBody = body
+      lastTimeout = timeout
       return response
     }
   }

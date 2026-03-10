@@ -69,7 +69,8 @@ let _: EmptyResponse = try await client.delete(from: deleteURL)
 
 Typed requests use the configured body-coding defaults for `Accept` and, when Parcel encodes the
 request body, `Content-Type`. The default configuration uses JSON and sets both to
-`application/json`.
+`application/json`. Parcel also applies a default request timeout of 90 seconds unless you override
+it per call or set `defaultTimeout` to `nil`.
 
 If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec`
 through `ClientConfiguration`:
@@ -77,6 +78,7 @@ through `ClientConfiguration`:
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
+        defaultTimeout: .seconds(30),
         bodyCoding: .json(
             codec: JSONBodyCodec(
                 makeDecoder: {
@@ -139,9 +141,14 @@ let client = Client(
 
 ## Runtime
 
-Parcel is browser-oriented. `Client()` only picks the built-in browser transport on `wasm32` builds running in a browser-capable JavaScript runtime, including worker-style globals that expose `self`.
+Parcel is browser-oriented. `Client()` is only available on `wasm32` builds running in a
+browser-capable JavaScript runtime, including worker-style globals that expose `self`. Host builds
+must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level
+client behavior.
 
-`BrowserTransport` installs the JavaScriptKit executor when it initializes in a supported runtime. If your app uses JavaScriptKit async APIs outside Parcel, install the executor during app startup:
+`BrowserTransport` is likewise only available on those `wasm32` browser builds. It installs the
+JavaScriptKit executor when it initializes in a supported runtime. If your app uses JavaScriptKit
+async APIs outside Parcel, install the executor during app startup:
 
 ```swift
 import JavaScriptEventLoop

@@ -251,6 +251,38 @@
     #expect(request?.headerFields[.contentType] == nil)
   }
 
+  @Test func typedRequestsUseDefaultTimeoutWhenCallerOmitsOne() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 200,
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
+      )
+    )
+    let client = Client(
+      configuration: ClientConfiguration(defaultTimeout: .seconds(90)),
+      transport: transport
+    )
+
+    let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
+
+    #expect(await transport.lastTimeout == .seconds(90))
+  }
+
+  @Test func rawRequestsLetPerCallTimeoutOverrideTheDefaultTimeout() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
+    let client = Client(
+      configuration: ClientConfiguration(defaultTimeout: .seconds(90)),
+      transport: transport
+    )
+
+    _ = try await client.send(
+      HTTPRequest(method: .head, url: exampleStatusURL),
+      timeout: .seconds(3)
+    )
+
+    #expect(await transport.lastTimeout == .seconds(3))
+  }
+
   @Test func rawRequestSendMergesDefaultHeadersWithoutAddingBodyCodingHeaders() async throws {
     let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
     let client = Client(
@@ -304,32 +336,6 @@
 
     #expect(response == EmptyResponse())
     #expect(request?.method == .head)
-  }
-
-  @Test func defaultClientUsesUnavailableTransportOnHostBuilds() async throws {
-    let client = Client()
-
-    do {
-      let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
-      Issue.record("Expected request to throw")
-    } catch let error as ClientError {
-      #expect(error == .unsupportedPlatform)
-    }
-  }
-
-  @Test func browserTransportRawSendIsUnavailableOnHostBuilds() async throws {
-    let transport = BrowserTransport()
-
-    do {
-      _ = try await transport.send(
-        HTTPRequest(method: .get, url: exampleStatusURL),
-        body: nil,
-        timeout: nil
-      )
-      Issue.record("Expected request to throw")
-    } catch let error as ClientError {
-      #expect(error == .unsupportedPlatform)
-    }
   }
 
   @Test func emptyResponseCanDecodeToEmptyResponse() async throws {

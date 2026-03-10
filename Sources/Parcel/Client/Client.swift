@@ -5,12 +5,24 @@ public struct Client: Sendable {
   public let configuration: ClientConfiguration
   private let transport: any Transport
 
-  public init(configuration: ClientConfiguration = .init()) {
-    self.init(
-      configuration: configuration,
-      transport: DefaultTransport.make()
+  #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)
+    public init(configuration: ClientConfiguration = .init()) {
+      self.init(
+        configuration: configuration,
+        transport: DefaultTransport.make()
+      )
+    }
+  #else
+    @available(
+      *,
+      unavailable,
+      message:
+        "Client() is only available when Parcel can select its built-in browser transport. Inject a Transport on host builds."
     )
-  }
+    public init(configuration: ClientConfiguration = .init()) {
+      fatalError("Client() is unavailable on this platform")
+    }
+  #endif
 
   public init(
     configuration: ClientConfiguration = .init(),
@@ -220,7 +232,7 @@ public struct Client: Sendable {
     try await transport.send(
       prepare(request),
       body: body,
-      timeout: timeout
+      timeout: effectiveTimeout(timeout)
     )
   }
 
@@ -324,7 +336,7 @@ public struct Client: Sendable {
     let response = try await transport.send(
       request,
       body: body,
-      timeout: timeout
+      timeout: effectiveTimeout(timeout)
     )
     return try decode(response, as: responseType)
   }
@@ -368,6 +380,10 @@ public struct Client: Sendable {
     var headers = configuration.defaultHeaders
     headers.append(contentsOf: additionalHeaders)
     return headers
+  }
+
+  private func effectiveTimeout(_ timeout: Duration?) -> Duration? {
+    timeout ?? configuration.defaultTimeout
   }
 
   private func makeRequest(

@@ -101,9 +101,35 @@ function normalizeHeaders(headers) {
     return {};
   }
 
-  return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [String(key), String(value)])
-  );
+  const normalized = {};
+  const append = (key, value) => {
+    const name = String(key);
+    const stringValue = String(value);
+    normalized[name] = normalized[name]
+      ? `${normalized[name]}, ${stringValue}`
+      : stringValue;
+  };
+
+  if (Array.isArray(headers)) {
+    for (const entry of headers) {
+      if (Array.isArray(entry) && entry.length >= 2) {
+        append(entry[0], entry[1]);
+      }
+    }
+    return normalized;
+  }
+
+  if (typeof headers.forEach === "function") {
+    headers.forEach((value, key) => {
+      append(key, value);
+    });
+    return normalized;
+  }
+
+  for (const [key, value] of Object.entries(headers)) {
+    append(key, value);
+  }
+  return normalized;
 }
 
 function decodeBody(body) {

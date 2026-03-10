@@ -21,7 +21,7 @@ Parcel exposes:
 - `DecodedResponse`
 - `EmptyResponse`
 - `Transport`
-- `BrowserTransport`
+- `BrowserTransport` on `wasm32` builds that include Parcel's browser transport
 - `ClientError`
 
 ## Behavior
@@ -34,6 +34,7 @@ Parcel exposes:
 - Typed response bodies are decoded with the configured `BodyCodec`.
 - `BodyCodingConfiguration` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
 - `BodyCodingConfiguration` provides convenience factories for JSON, form URL-encoded, plain-text, and raw-data body coding.
+- `ClientConfiguration` also carries an optional `defaultTimeout`, which defaults to 90 seconds and is used whenever a per-call timeout is omitted.
 - Typed `Client` request builders append the configured `Accept` header values when the request does not already provide `Accept`.
 - Typed `Client` request builders append the configured `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
@@ -56,18 +57,21 @@ Parcel exposes:
 
 - Core request/response logic is transport-driven via `Transport`.
 - `Transport.send(_:, body:timeout:)` returns raw `HTTPResponse` values plus buffered body bytes and the final response `URL?`, regardless of the HTTP status code.
+- `Client(configuration:)` is only available when Parcel can select the built-in browser transport; host builds must inject an explicit `Transport`.
+- `BrowserTransport` is only exposed on `wasm32` builds with Parcel's browser transport dependencies available.
 - The default transport is `BrowserTransport` only on `wasm32` builds with a browser-capable JavaScript runtime.
 - `BrowserTransport` uses the browser `fetch` API.
 - `BrowserTransport.isSupportedRuntime` accepts both window and worker-style JavaScript global scopes when `fetch`, `AbortController`, `Object`, and `Uint8Array` are available.
 - `BrowserTransport` installs JavaScriptKit's global event-loop executor when initialized in a supported runtime.
 - `BrowserTransport` accepts an optional per-request timeout and enforces it with `AbortController` plus `setTimeout`.
+- `BrowserTransport` passes outgoing headers to `fetch` as an ordered header-entry list so repeated field names preserve their semantics instead of collapsing to the last value.
 - Because `BrowserTransport` buffers raw byte bodies, the generic client decode path handles empty-response and malformed-payload behavior consistently for browser requests regardless of the configured codec.
 - Raw transport responses remain available as byte bodies via `arrayBuffer()`.
 - `BrowserTransport` binds JavaScript instance method calls through JavaScriptKit member-call helpers so browser methods receive the correct `this` value.
 - `BrowserTransport` threads an `AbortController` signal through `fetch` and response-body reads so Swift task cancellation aborts the browser request and body consumption.
 - `BrowserTransport` currently buffers raw bodies with `arrayBuffer()` and does not yet expose streaming `ReadableStream` access.
 - `BrowserTransport` does not retain temporary `JSClosure` bridges beyond synchronous JavaScript header iteration, using explicit release on JavaScriptKit no-weakrefs builds.
-- `BrowserTransport` keeps the same raw API surface on unsupported builds, but all methods throw `ClientError.unsupportedPlatform`.
+- `ClientError.unsupportedPlatform` remains reserved for `wasm32` builds where Parcel can compile but no browser-capable JavaScript runtime is available.
 
 ## Validation Model
 

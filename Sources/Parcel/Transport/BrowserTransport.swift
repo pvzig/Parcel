@@ -128,7 +128,8 @@ import HTTPTypes
     ) async throws -> FetchContext {
       Self.installExecutorIfNeeded()
       guard let fetch = JSObject.global.fetch.function,
-        let objectConstructor = JSObject.global.Object.function
+        let objectConstructor = JSObject.global.Object.function,
+        let arrayConstructor = JSObject.global.Array.function
       else {
         throw ClientError.invalidJavaScriptContext
       }
@@ -142,9 +143,12 @@ import HTTPTypes
       options["signal"] = abortState.signal
 
       if request.headerFields.isEmpty == false {
-        let headers = objectConstructor.new()
-        for field in request.headerFields {
-          headers[field.name.rawName] = .string(field.value)
+        let headers = arrayConstructor.new()
+        for (index, field) in request.headerFields.enumerated() {
+          let entry = arrayConstructor.new()
+          entry[0] = .string(field.name.rawName)
+          entry[1] = .string(field.value)
+          headers[index] = .object(entry)
         }
         options["headers"] = .object(headers)
       }
@@ -353,20 +357,6 @@ import HTTPTypes
 
     private func responseURL(from responseObject: JSObject) -> URL? {
       responseObject.url.string.flatMap(URL.init(string:))
-    }
-  }
-#else
-  public struct BrowserTransport: Transport {
-    public static let isSupportedRuntime = false
-
-    public init() {}
-
-    public func send(
-      _ request: HTTPRequest,
-      body: Data?,
-      timeout: Duration?
-    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
-      throw ClientError.unsupportedPlatform
     }
   }
 #endif
