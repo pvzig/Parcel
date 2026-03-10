@@ -1,28 +1,26 @@
 #if !arch(wasm32)
+  import HTTPTypes
   import Testing
 
   @testable import Parcel
 
   @Test func httpHeadersPreserveMultipleValuesCaseInsensitively() {
-    var headers = HTTPHeaders()
-    headers.add(name: "Set-Cookie", value: "a=1")
-    headers.add(name: "set-cookie", value: "b=2")
+    var headers = HTTPFields()
+    headers.append(.init(name: .setCookie, value: "a=1"))
+    headers.append(.init(name: HTTPField.Name("set-cookie")!, value: "b=2"))
 
-    #expect(headers["SET-COOKIE"] == "a=1")
-    #expect(headers.values(for: "set-cookie") == ["a=1", "b=2"])
+    #expect(headers[fields: .setCookie].first?.value == "a=1")
+    #expect(headers[values: .setCookie] == ["a=1", "b=2"])
   }
 
-  @Test func httpHeadersMergeOverrideReplacesDefaultValuesCaseInsensitively() {
-    var headers = HTTPHeaders(["Accept": "application/json", "X-Trace": "default"])
-    let overrides = HTTPHeaders([
-      ("accept", "application/problem+json"),
-      ("X-Trace", "custom-1"),
-      ("x-trace", "custom-2"),
-    ])
+  @Test func httpFieldsResolveLookupsCaseInsensitively() {
+    var headers: HTTPFields = [
+      .accept: "application/json",
+      .xTrace: "default",
+    ]
+    headers.append(.init(name: HTTPField.Name("x-trace")!, value: "custom-1"))
 
-    headers.merge(overridingWith: overrides)
-
-    #expect(headers.values(for: "accept") == ["application/problem+json"])
-    #expect(headers.values(for: "X-Trace") == ["custom-1", "custom-2"])
+    #expect(headers[HTTPField.Name("accept")!] == "application/json")
+    #expect(headers[values: HTTPField.Name("X-Trace")!] == ["default", "custom-1"])
   }
 #endif

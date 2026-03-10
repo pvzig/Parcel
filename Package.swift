@@ -22,6 +22,7 @@ var packageTargets: [Target] = [
   .target(
     name: "Parcel",
     dependencies: [
+      .product(name: "HTTPTypes", package: "swift-http-types"),
       .product(name: "JavaScriptEventLoop", package: "JavaScriptKit"),
       .product(name: "JavaScriptKit", package: "JavaScriptKit"),
     ]
@@ -58,6 +59,7 @@ let package = Package(
     )
   ],
   dependencies: [
+    .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
     .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.46.5")
   ],
   targets: packageTargets

@@ -1,46 +1,47 @@
 #if !arch(wasm32)
   import Foundation
+  import HTTPTypes
   import Testing
 
   @testable import Parcel
 
   @Test func postEncodesJSONAndDecodesResponse() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(
+      response: fixtureResponse(
         statusCode: 202,
         body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(
-      configuration: ClientConfiguration(defaultHeaders: ["X-Client": "Parcel"]),
+      configuration: ClientConfiguration(defaultHeaders: [.xClient: "Parcel"]),
       transport: transport
     )
 
     let accepted: GenerateAccepted = try await client.post(
       GenerateRequest(pagePath: "/posts/example"),
       to: exampleGenerateURL,
-      headers: ["X-Trace": "123"]
+      headers: [.xTrace: "123"]
     )
 
     let request = await transport.lastRequest
-    let body = try #require(request?.body)
+    let body = try #require(await transport.lastBody)
     let decodedBody = try JSONDecoder().decode(GenerateRequest.self, from: body)
 
     #expect(accepted.statusURL == exampleStatusURL)
     #expect(request?.method == .post)
     #expect(request?.url == exampleGenerateURL)
-    #expect(request?.headers["X-Client"] == "Parcel")
-    #expect(request?.headers["X-Trace"] == "123")
-    #expect(request?.headers["Accept"] == nil)
-    #expect(request?.headers["Content-Type"] == nil)
+    #expect(request?.headerFields[.xClient] == "Parcel")
+    #expect(request?.headerFields[.xTrace] == "123")
+    #expect(request?.headerFields[.accept] == nil)
+    #expect(request?.headerFields[.contentType] == nil)
     #expect(decodedBody == GenerateRequest(pagePath: "/posts/example"))
   }
 
   @Test func responseMethodsPreserveMetadata() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(
+      response: fixtureResponse(
         statusCode: 202,
-        headers: ["etag": "abc123"],
+        headerFields: [.eTag: "abc123"],
         url: exampleStatusURL,
         body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
@@ -51,16 +52,18 @@
       from: exampleStatusURL,
       expecting: GenerateAccepted.self
     )
+    let expectedBody = try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
 
     #expect(accepted.value.statusURL == exampleStatusURL)
-    #expect(accepted.response.statusCode == 202)
-    #expect(accepted.response.headers["etag"] == "abc123")
-    #expect(accepted.response.url == exampleStatusURL)
+    #expect(accepted.response.status.code == 202)
+    #expect(accepted.response.headerFields[.eTag] == "abc123")
+    #expect(accepted.url == exampleStatusURL)
+    #expect(accepted.body == expectedBody)
   }
 
   @Test func customDecoderAppliesToClientDecodePath() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(
+      response: fixtureResponse(
         statusCode: 200,
         body: Data(#"{"generatedAt":"2026-03-09T18:00:00Z"}"#.utf8)
       )
@@ -83,34 +86,36 @@
     #expect(accepted.generatedAt == Date(timeIntervalSince1970: 1_773_079_200))
   }
 
-  @Test func additionalHeadersOverrideDefaultHeadersCaseInsensitively() async throws {
+  @Test func defaultAndAdditionalHeadersAreBothPreserved() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(
+      response: fixtureResponse(
         statusCode: 200,
         body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
     )
     let client = Client(
       configuration: ClientConfiguration(
-        defaultHeaders: ["accept": "application/vnd.parcel+json"]
+        defaultHeaders: [HTTPField.Name("accept")!: "application/vnd.parcel+json"]
       ),
       transport: transport
     )
 
     let _: GenerateAccepted = try await client.get(
       from: exampleStatusURL,
-      headers: ["Accept": "application/json"]
+      headers: [.accept: "application/json"]
     )
 
     let request = await transport.lastRequest
 
-    #expect(request?.headers["Accept"] == "application/json")
-    #expect(request?.headers.values(for: "accept") == ["application/json"])
+    #expect(request?.headerFields[values: .accept] == [
+      "application/vnd.parcel+json",
+      "application/json",
+    ])
   }
 
   @Test func typedRequestsDoNotAddJSONHeadersByDefault() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(
+      response: fixtureResponse(
         statusCode: 200,
         body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
       )
@@ -120,14 +125,14 @@
     let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
     let request = await transport.lastRequest
 
-    #expect(request?.headers["Accept"] == nil)
-    #expect(request?.headers["Content-Type"] == nil)
+    #expect(request?.headerFields[.accept] == nil)
+    #expect(request?.headerFields[.contentType] == nil)
   }
 
   @Test func rawRequestSendMergesDefaultHeadersWithoutAddingJSONHeaders() async throws {
-    let transport = RecordingTransport(response: HTTPResponse(statusCode: 204))
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
     let client = Client(
-      configuration: ClientConfiguration(defaultHeaders: ["X-Client": "Parcel"]),
+      configuration: ClientConfiguration(defaultHeaders: [.xClient: "Parcel"]),
       transport: transport
     )
 
@@ -135,21 +140,21 @@
       HTTPRequest(
         method: .head,
         url: exampleStatusURL,
-        headers: ["X-Trace": "123"]
+        headerFields: [.xTrace: "123"]
       )
     )
 
     let request = await transport.lastRequest
 
     #expect(request?.method == .head)
-    #expect(request?.headers["X-Client"] == "Parcel")
-    #expect(request?.headers["X-Trace"] == "123")
-    #expect(request?.headers["Accept"] == nil)
-    #expect(request?.headers["Content-Type"] == nil)
+    #expect(request?.headerFields[.xClient] == "Parcel")
+    #expect(request?.headerFields[.xTrace] == "123")
+    #expect(request?.headerFields[.accept] == nil)
+    #expect(request?.headerFields[.contentType] == nil)
   }
 
   @Test func headResponseSendsHEADRequests() async throws {
-    let transport = RecordingTransport(response: HTTPResponse(statusCode: 204))
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
     let client = Client(transport: transport)
 
     let response: EmptyResponse = try await client.head(from: exampleStatusURL)
@@ -175,7 +180,9 @@
 
     do {
       _ = try await transport.send(
-        HTTPRequest(method: .get, url: exampleStatusURL)
+        HTTPRequest(method: .get, url: exampleStatusURL),
+        body: nil,
+        timeout: nil
       )
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
@@ -185,7 +192,7 @@
 
   @Test func emptyResponseCanDecodeToEmptyResponse() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(statusCode: 204)
+      response: fixtureResponse(statusCode: 204)
     )
     let client = Client(transport: transport)
 
@@ -196,7 +203,7 @@
 
   @Test func emptySuccessfulBodyThrowsEmptyResponseBodyWhenExpectingModel() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(statusCode: 200, body: Data())
+      response: fixtureResponse(statusCode: 200, body: Data())
     )
     let client = Client(transport: transport)
 
@@ -210,7 +217,7 @@
 
   @Test func invalidJSONBodyDoesNotSilentlyDecodeAsEmptyResponse() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(statusCode: 200, body: Data("accepted".utf8))
+      response: fixtureResponse(statusCode: 200, body: Data("accepted".utf8))
     )
     let client = Client(transport: transport)
 
@@ -225,7 +232,7 @@
 
   @Test func unsuccessfulStatusThrowsClientError() async throws {
     let transport = RecordingTransport(
-      response: HTTPResponse(statusCode: 503, body: Data("unavailable".utf8))
+      response: fixtureResponse(statusCode: 503, body: Data("unavailable".utf8))
     )
     let client = Client(transport: transport)
 

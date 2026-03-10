@@ -1,11 +1,19 @@
 # Parcel
 
-Parcel is a small browser HTTP client for SwiftWASM that encodes request bodies from `Encodable` models and decodes responses into `Decodable` models.
+Parcel is a small browser HTTP client for SwiftWASM that encodes request bodies from `Encodable`
+models and decodes responses into `Decodable` models.
+
+Parcel uses Apple's [`swift-http-types`](https://github.com/apple/swift-http-types) directly for
+`HTTPRequest`, `HTTPResponse`, and `HTTPFields`. Parcel-specific state like buffered response
+bodies, timeouts, and final response URLs travels alongside those message heads instead of inside
+custom wrappers.
 
 ## Usage
 
 ```swift
 import Foundation
+import HTTPTypes
+import Parcel
 
 struct GenerateRequest: Encodable {
     let pagePath: String
@@ -39,13 +47,16 @@ let accepted = try await client.postResponse(
     expecting: AcceptedResponse.self
 )
 
-let statusCode = accepted.response.statusCode
-let etag = accepted.response.headers["etag"]
-let finalURL = accepted.response.url
+let statusCode = accepted.response.status.code
+let etag = accepted.response.headerFields[.eTag]
+let finalURL = accepted.url
+let rawBody = accepted.body
 let value = accepted.value
 ```
 
-If you work directly with a `Transport`, `send(_:)` is a raw operation and may return `HTTPResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
+If you work directly with a `Transport`, `send(_:, body:timeout:)` is a raw operation and may
+return `HTTPResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat
+non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
 
 On the browser transport path, `response.json()`, `response.text()`, and `response.arrayBuffer()` promise rejections surface as `ClientError.responseBodyFailure`, while Swift task cancellation throws `CancellationError`.
 

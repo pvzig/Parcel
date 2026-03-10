@@ -1,4 +1,5 @@
 import Foundation
+import HTTPTypes
 
 #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)
   import JavaScriptEventLoop
@@ -91,26 +92,40 @@ import Foundation
       Self.installExecutorIfNeeded()
     }
 
-    public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-      let context = try await fetchResponseObject(for: request)
+    public func send(
+      _ request: HTTPRequest,
+      body: Data?,
+      timeout: Duration?
+    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
+      let context = try await fetchResponseObject(
+        for: request,
+        body: body,
+        timeout: timeout
+      )
       let responseObject = context.responseObject
       let statusCode = statusCode(from: responseObject)
       let headers = readHeaders(from: responseObject)
       let url = responseURL(from: responseObject)
-      let body = try await readBody(
+      let responseBody = try await readBody(
         from: responseObject,
         abortState: context.abortState
       )
 
-      return HTTPResponse(
-        statusCode: statusCode,
-        headers: headers,
+      return (
+        response: HTTPResponse(
+          status: .init(code: statusCode),
+          headerFields: headers
+        ),
+        body: responseBody,
         url: url,
-        body: body
       )
     }
 
-    private func fetchResponseObject(for request: HTTPRequest) async throws -> FetchContext {
+    private func fetchResponseObject(
+      for request: HTTPRequest,
+      body: Data?,
+      timeout: Duration?
+    ) async throws -> FetchContext {
       Self.installExecutorIfNeeded()
       guard let fetch = JSObject.global.fetch.function,
         let objectConstructor = JSObject.global.Object.function
@@ -119,38 +134,27 @@ import Foundation
       }
 
       let abortState = try makeAbortController()
-      if let timeout = request.options.timeout {
+      if let timeout {
         try abortState.armTimeout(timeout)
       }
       let options = objectConstructor.new()
       options["method"] = .string(request.method.rawValue)
       options["signal"] = abortState.signal
 
-      if request.headers.isEmpty == false {
+      if request.headerFields.isEmpty == false {
         let headers = objectConstructor.new()
-        for (name, value) in request.headers {
-          headers[name] = .string(value)
+        for field in request.headerFields {
+          headers[field.name.rawName] = .string(field.value)
         }
         options["headers"] = .object(headers)
       }
 
-      if let mode = request.options.mode {
-        options["mode"] = .string(mode.rawValue)
-      }
-
-      if let credentials = request.options.credentials {
-        options["credentials"] = .string(credentials.rawValue)
-      }
-
-      if let cache = request.options.cache {
-        options["cache"] = .string(cache.rawValue)
-      }
-
-      if let body = request.body, body.isEmpty == false {
+      if let body, body.isEmpty == false {
         options["body"] = JSTypedArray<UInt8>(body).jsValue
       }
 
-      guard let responsePromiseObject = fetch(request.url.absoluteString, options).object,
+      guard let requestURL = request.url,
+        let responsePromiseObject = fetch(requestURL.absoluteString, options).object,
         let responsePromise = JSPromise(responsePromiseObject)
       else {
         throw ClientError.invalidFetchResponse
@@ -170,21 +174,22 @@ import Foundation
       )
     }
 
-    private func readHeaders(from responseObject: JSObject) -> HTTPHeaders {
+    private func readHeaders(from responseObject: JSObject) -> HTTPFields {
       guard let headersObject = responseObject.headers.object else {
         return .init()
       }
 
-      var headers = HTTPHeaders()
+      var headers = HTTPFields()
       let collector = JSClosure { arguments in
         guard arguments.count >= 2,
           let value = arguments[0].string,
-          let key = arguments[1].string
+          let key = arguments[1].string,
+          let fieldName = HTTPField.Name(key)
         else {
           return .undefined
         }
 
-        headers.add(name: key, value: value)
+        headers.append(.init(name: fieldName, value: value))
         return .undefined
       }
       #if JAVASCRIPTKIT_WITHOUT_WEAKREFS
@@ -356,7 +361,11 @@ import Foundation
 
     public init() {}
 
-    public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+    public func send(
+      _ request: HTTPRequest,
+      body: Data?,
+      timeout: Duration?
+    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
       throw ClientError.unsupportedPlatform
     }
   }

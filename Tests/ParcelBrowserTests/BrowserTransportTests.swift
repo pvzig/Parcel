@@ -1,5 +1,6 @@
 #if arch(wasm32)
   import Foundation
+  import HTTPTypes
   import JavaScriptEventLoopTestSupport
   import Testing
 
@@ -35,55 +36,32 @@
         bodyText: "accepted"
       )
 
-      let response = try await transport.send(
-        HTTPRequest(
-          method: .post,
-          url: exampleGenerateURL,
-          headers: [
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "X-Trace": "123",
-          ],
-          body: Data(#"{"pagePath":"/posts/example"}"#.utf8)
-        )
+      let request = HTTPRequest(
+        method: .post,
+        url: exampleGenerateURL,
+        headerFields: [
+          HTTPField.Name.accept: "application/json",
+          HTTPField.Name.contentType: "application/json",
+          HTTPField.Name.xTrace: "123",
+        ]
       )
-      let request = try #require(harness.recordedRequests().first)
+      let response = try await transport.send(
+        request,
+        body: Data(#"{"pagePath":"/posts/example"}"#.utf8),
+        timeout: nil
+      )
+      let recordedRequest = try #require(harness.recordedRequests().first)
 
-      #expect(response.statusCode == 202)
-      #expect(response.headers["etag"] == "abc123")
+      #expect(response.response.status.code == 202)
+      #expect(response.response.headerFields[HTTPField.Name.eTag] == "abc123")
       #expect(response.url == exampleStatusURL)
       #expect(String(data: try #require(response.body), encoding: .utf8) == "accepted")
-      #expect(request.method == "POST")
-      #expect(request.url == exampleGenerateURL)
-      #expect(request.headers["Accept"] == "application/json")
-      #expect(request.headers["Content-Type"] == "application/json")
-      #expect(request.headers["X-Trace"] == "123")
-      #expect(request.bodyText == #"{"pagePath":"/posts/example"}"#)
-    }
-
-    @Test func browserTransportSendAppliesFetchOptions() async throws {
-      let harness = try BrowserTestHarness()
-      let transport = BrowserTransport()
-
-      try harness.reset()
-      try harness.configureResponse(statusCode: 204)
-
-      _ = try await transport.send(
-        HTTPRequest(
-          method: .get,
-          url: exampleStatusURL,
-          options: HTTPRequestOptions(
-            mode: .noCORS,
-            credentials: .include,
-            cache: .reload
-          )
-        )
-      )
-      let request = try #require(harness.recordedRequests().first)
-
-      #expect(request.mode == "no-cors")
-      #expect(request.credentials == "include")
-      #expect(request.cache == "reload")
+      #expect(recordedRequest.method == "POST")
+      #expect(recordedRequest.url == exampleGenerateURL)
+      #expect(recordedRequest.headers["Accept"] == "application/json")
+      #expect(recordedRequest.headers["Content-Type"] == "application/json")
+      #expect(recordedRequest.headers["X-Trace"] == "123")
+      #expect(recordedRequest.bodyText == #"{"pagePath":"/posts/example"}"#)
     }
 
     @Test func clientDecodePathOverBrowserTransportDecodesJSONResponses() async throws {
@@ -105,11 +83,11 @@
       )
 
       #expect(accepted.value == GenerateAccepted(statusURL: exampleStatusURL))
-      #expect(accepted.response.statusCode == 200)
-      #expect(accepted.response.headers["content-type"] == "application/json")
-      #expect(accepted.response.url == exampleStatusURL)
+      #expect(accepted.response.status.code == 200)
+      #expect(accepted.response.headerFields[HTTPField.Name.contentType] == "application/json")
+      #expect(accepted.url == exampleStatusURL)
       #expect(
-        String(data: try #require(accepted.response.body), encoding: .utf8)
+        String(data: try #require(accepted.body), encoding: .utf8)
           == #"{"statusUrl":"https://example.com/status"}"#
       )
     }
@@ -180,7 +158,7 @@
       )
 
       #expect(response.value == EmptyResponse())
-      #expect(try #require(response.response.body).isEmpty)
+      #expect(try #require(response.body).isEmpty)
     }
 
     @Test func clientDecodePathOverBrowserTransportValidatesNonJSONPayloadForEmptyResponse()
@@ -221,7 +199,9 @@
 
       let task = Task {
         try await transport.send(
-          HTTPRequest(method: .get, url: exampleStatusURL)
+          HTTPRequest(method: .get, url: exampleStatusURL),
+          body: nil,
+          timeout: nil
         )
       }
 
@@ -257,11 +237,9 @@
 
       do {
         _ = try await transport.send(
-          HTTPRequest(
-            method: .get,
-            url: exampleStatusURL,
-            options: HTTPRequestOptions(timeout: .milliseconds(50))
-          )
+          HTTPRequest(method: .get, url: exampleStatusURL),
+          body: nil,
+          timeout: .milliseconds(50)
         )
         Issue.record("Expected request to time out")
       } catch let error as ClientError {

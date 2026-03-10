@@ -1,9 +1,11 @@
+import HTTPTypes
+
 public struct ClientConfiguration: Sendable {
-  public var defaultHeaders: HTTPHeaders
+  public var defaultHeaders: HTTPFields
   public var jsonCoding: JSONCodingConfiguration
 
   public init(
-    defaultHeaders: HTTPHeaders = [:],
+    defaultHeaders: HTTPFields = [:],
     jsonCoding: JSONCodingConfiguration = .init()
   ) {
     self.defaultHeaders = defaultHeaders

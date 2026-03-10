@@ -1,6 +1,11 @@
 #if arch(wasm32)
   import Foundation
+  import HTTPTypes
   @preconcurrency import JavaScriptKit
+
+  extension HTTPField.Name {
+    static let xTrace = Self("X-Trace")!
+  }
 
   func fixtureURL(_ string: String) -> URL {
     guard let url = URL(string: string) else {
