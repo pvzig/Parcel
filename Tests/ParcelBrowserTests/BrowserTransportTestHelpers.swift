@@ -39,6 +39,7 @@
     let credentials: String?
     let cache: String?
     let aborted: Bool
+    let bodyCancelled: Bool
   }
 
   /// Errors thrown when the JavaScript test harness is unavailable or malformed.
@@ -170,5 +171,17 @@
         from: Data(json.utf8)
       )
     }
+  }
+
+  func collectBodyData(_ body: HTTPBody?) async throws -> Data? {
+    try await body?.collect()
+  }
+
+  func collectBodyText(_ body: HTTPBody?) async throws -> String? {
+    guard let data = try await collectBodyData(body) else {
+      return nil
+    }
+
+    return String(decoding: data, as: UTF8.self)
   }
 #endif

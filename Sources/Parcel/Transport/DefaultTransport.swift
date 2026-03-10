@@ -15,9 +15,9 @@ import HTTPTypes
   struct UnavailableTransport: Transport {
     func send(
       _ request: HTTPRequest,
-      body: Data?,
+      body: HTTPBody?,
       timeout: Duration?
-    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
+    ) async throws -> TransportResponse {
       throw ClientError.unsupportedPlatform
     }
   }

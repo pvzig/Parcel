@@ -47,7 +47,7 @@
       )
       let response = try await transport.send(
         request,
-        body: Data(#"{"pagePath":"/posts/example"}"#.utf8),
+        body: HTTPBody(Data(#"{"pagePath":"/posts/example"}"#.utf8)),
         timeout: nil
       )
       let recordedRequest = try #require(harness.recordedRequests().first)
@@ -55,13 +55,34 @@
       #expect(response.response.status.code == 202)
       #expect(response.response.headerFields[HTTPField.Name.eTag] == "abc123")
       #expect(response.url == exampleStatusURL)
-      #expect(String(data: try #require(response.body), encoding: .utf8) == "accepted")
+      #expect(try await collectBodyText(response.body) == "accepted")
       #expect(recordedRequest.method == "POST")
       #expect(recordedRequest.url == exampleGenerateURL)
       #expect(recordedRequest.headers["Accept"] == "application/json")
       #expect(recordedRequest.headers["Content-Type"] == "application/json")
       #expect(recordedRequest.headers["X-Trace"] == "123")
       #expect(recordedRequest.bodyText == #"{"pagePath":"/posts/example"}"#)
+    }
+
+    @Test func browserTransportHonorsMaximumBufferedRequestBodyBytes() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport(maximumBufferedRequestBodyBytes: 4)
+
+      try harness.reset()
+      try harness.configureResponse(statusCode: 204)
+
+      do {
+        _ = try await transport.send(
+          HTTPRequest(method: .post, url: exampleGenerateURL),
+          body: HTTPBody("hello"),
+          timeout: nil
+        )
+        Issue.record("Expected request buffering to enforce the configured byte limit")
+      } catch let error as HTTPBody.TooManyBytesError {
+        #expect(error == .init(maxBytes: 4))
+      }
+
+      #expect(try harness.recordedRequests().isEmpty)
     }
 
     @Test func clientDecodePathOverBrowserTransportDecodesJSONResponses() async throws {
@@ -86,10 +107,6 @@
       #expect(accepted.response.status.code == 200)
       #expect(accepted.response.headerFields[HTTPField.Name.contentType] == "application/json")
       #expect(accepted.url == exampleStatusURL)
-      #expect(
-        String(data: try #require(accepted.body), encoding: .utf8)
-          == #"{"statusUrl":"https://example.com/status"}"#
-      )
     }
 
     @Test func clientDecodePathOverBrowserTransportUsesConfiguredBodyCodec() async throws {
@@ -178,6 +195,27 @@
       }
     }
 
+    @Test func clientDecodePathOverBrowserTransportPreservesMissingErrorBodiesAsNil()
+      async throws
+    {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+      let client = Client(transport: transport)
+
+      try harness.reset()
+      try harness.configureResponse(statusCode: 503)
+
+      do {
+        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
+          HTTPRequest(method: .get, url: exampleStatusURL),
+          expecting: GenerateAccepted.self
+        )
+        Issue.record("Expected request to throw")
+      } catch let error as ClientError {
+        #expect(error == .unsuccessfulStatusCode(503, body: nil))
+      }
+    }
+
     @Test func clientDecodePathOverBrowserTransportThrowsEmptyResponseBodyForEmptySuccessBody()
       async throws
     {
@@ -218,7 +256,6 @@
       )
 
       #expect(response.value == EmptyResponse())
-      #expect(try #require(response.body).isEmpty)
     }
 
     @Test func clientDecodePathOverBrowserTransportValidatesNonJSONPayloadForEmptyResponse()
@@ -257,12 +294,13 @@
         behavior: .init(arrayBufferDelayMilliseconds: 500)
       )
 
+      let response = try await transport.send(
+        HTTPRequest(method: .get, url: exampleStatusURL),
+        body: nil,
+        timeout: nil
+      )
       let task = Task {
-        try await transport.send(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          body: nil,
-          timeout: nil
-        )
+        try await collectBodyData(response.body)
       }
 
       for _ in 0..<20 {
@@ -279,6 +317,68 @@
       } catch is CancellationError {
       } catch {
         Issue.record("Expected cancellation, got \(error)")
+      }
+
+      let request = try #require(harness.recordedRequests().first)
+      #expect(request.aborted)
+    }
+
+    @Test func browserTransportCancelsAbandonedResponseBodies() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        bodyText: "accepted",
+        behavior: .init(arrayBufferDelayMilliseconds: 500)
+      )
+
+      do {
+        let response = try await transport.send(
+          HTTPRequest(method: .get, url: exampleStatusURL),
+          body: nil,
+          timeout: nil
+        )
+        #expect(response.body != nil)
+      }
+
+      for _ in 0..<20 {
+        if let request = try harness.recordedRequests().first,
+          request.bodyCancelled
+        {
+          break
+        }
+        await Task.yield()
+      }
+
+      let request = try #require(harness.recordedRequests().first)
+      #expect(request.bodyCancelled)
+      #expect(request.aborted == false)
+    }
+
+    @Test func browserTransportSendTimesOutBodyReads() async throws {
+      let harness = try BrowserTestHarness()
+      let transport = BrowserTransport()
+
+      try harness.reset()
+      try harness.configureResponse(
+        statusCode: 200,
+        bodyText: "accepted",
+        behavior: .init(arrayBufferDelayMilliseconds: 500)
+      )
+
+      let response = try await transport.send(
+        HTTPRequest(method: .get, url: exampleStatusURL),
+        body: nil,
+        timeout: .milliseconds(50)
+      )
+
+      do {
+        _ = try await collectBodyData(response.body)
+        Issue.record("Expected body read to time out")
+      } catch let error as ClientError {
+        #expect(error == .timedOut)
       }
 
       let request = try #require(harness.recordedRequests().first)

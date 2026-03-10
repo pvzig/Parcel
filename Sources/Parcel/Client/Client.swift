@@ -226,9 +226,9 @@ public struct Client: Sendable {
 
   public func send(
     _ request: HTTPRequest,
-    body: Data? = nil,
+    body: HTTPBody? = nil,
     timeout: Duration? = nil
-  ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
+  ) async throws -> TransportResponse {
     try await transport.send(
       prepare(request),
       body: body,
@@ -238,7 +238,7 @@ public struct Client: Sendable {
 
   public func sendResponse<Response: Decodable>(
     _ request: HTTPRequest,
-    body: Data? = nil,
+    body: HTTPBody? = nil,
     timeout: Duration? = nil,
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
@@ -321,7 +321,7 @@ public struct Client: Sendable {
         includeRequestContentType: true,
         includeAccept: true
       ),
-      body: try configuration.bodyCoding.codec.encode(body),
+      body: HTTPBody(try configuration.bodyCoding.codec.encode(body)),
       timeout: timeout,
       expecting: responseType
     )
@@ -329,7 +329,7 @@ public struct Client: Sendable {
 
   private func execute<Response: Decodable>(
     _ request: HTTPRequest,
-    body: Data?,
+    body: HTTPBody?,
     timeout: Duration?,
     expecting responseType: Response.Type
   ) async throws -> DecodedResponse<Response> {
@@ -338,28 +338,34 @@ public struct Client: Sendable {
       body: body,
       timeout: effectiveTimeout(timeout)
     )
-    return try decode(response, as: responseType)
+    return try await decode(response, as: responseType)
   }
 
   private func decode<Response: Decodable>(
-    _ response: (response: HTTPResponse, body: Data?, url: URL?),
+    _ response: TransportResponse,
     as responseType: Response.Type
-  ) throws -> DecodedResponse<Response> {
+  ) async throws -> DecodedResponse<Response> {
     guard (200..<300).contains(response.response.status.code) else {
       throw ClientError.unsuccessfulStatusCode(
         response.response.status.code,
-        body: response.body.flatMap { String(data: $0, encoding: .utf8) }
+        body: try await response.body?.text(
+          upTo: configuration.maximumBufferedBodyBytes
+        )
       )
     }
 
-    if let body = response.body, body.isEmpty == false {
-      let value = try configuration.bodyCoding.codec.decode(responseType, from: body)
-      return DecodedResponse(
-        value: value,
-        response: response.response,
-        body: body,
-        url: response.url
+    if let body = response.body {
+      let bufferedBody = try await body.collect(
+        upTo: configuration.maximumBufferedBodyBytes
       )
+      if bufferedBody.isEmpty == false {
+        let value = try configuration.bodyCoding.codec.decode(responseType, from: bufferedBody)
+        return DecodedResponse(
+          value: value,
+          response: response.response,
+          url: response.url
+        )
+      }
     }
 
     if responseType == EmptyResponse.self,
@@ -368,7 +374,6 @@ public struct Client: Sendable {
       return DecodedResponse(
         value: emptyResponse,
         response: response.response,
-        body: response.body,
         url: response.url
       )
     }

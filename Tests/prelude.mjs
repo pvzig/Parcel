@@ -185,7 +185,7 @@ function setRuntimeScope(scope) {
 }
 
 function runAbortableOperation({ signal, requestRecord, delayMilliseconds = 0, perform }) {
-  return new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
     let abortListener = null;
@@ -256,6 +256,12 @@ function runAbortableOperation({ signal, requestRecord, delayMilliseconds = 0, p
 
     enqueueMicrotask(finish);
   });
+
+  // Swift observes these rejections through JavaScriptKit, but Node can still
+  // report them as unhandled during abort races unless the source promise has
+  // its own rejection observer.
+  promise.catch(() => {});
+  return promise;
 }
 
 function makeHeaders(headers) {
@@ -281,6 +287,78 @@ function toArrayBuffer(text) {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
+function makeBodyStream(bodyText, signal, requestRecord, behavior) {
+  const streamState = {
+    locked: false,
+    consumed: false,
+  };
+
+  const stream = {
+    getReader() {
+      if (this !== stream) {
+        throw makeNamedError("TypeError", "Illegal invocation");
+      }
+
+      if (streamState.locked) {
+        throw makeNamedError("TypeError", "ReadableStream is already locked.");
+      }
+
+      streamState.locked = true;
+
+      let released = false;
+      const reader = {
+        read() {
+          if (this !== reader) {
+            throw makeNamedError("TypeError", "Illegal invocation");
+          }
+
+          if (released) {
+            return Promise.reject(
+              makeNamedError("TypeError", "Reader has been released.")
+            );
+          }
+
+          return runAbortableOperation({
+            signal,
+            requestRecord,
+            delayMilliseconds: behavior.arrayBufferDelayMilliseconds ?? 0,
+            perform: () => {
+              if (behavior.arrayBufferErrorName) {
+                throw makeNamedError(
+                  behavior.arrayBufferErrorName,
+                  behavior.arrayBufferErrorMessage
+                );
+              }
+
+              if (streamState.consumed) {
+                return { done: true, value: undefined };
+              }
+
+              streamState.consumed = true;
+              return { done: false, value: encoder.encode(bodyText) };
+            },
+          });
+        },
+        cancel() {
+          requestRecord.bodyCancelled = true;
+          released = true;
+          streamState.consumed = true;
+          streamState.locked = false;
+          return Promise.resolve();
+        },
+        releaseLock() {
+          released = true;
+          streamState.locked = false;
+        },
+      };
+
+      return reader;
+    },
+  };
+
+  return stream;
+}
+
 function makeResponse(url, requestRecord, signal) {
   const bodyText = responseBodyText();
   const behavior = state.nextResponse.behavior;
@@ -288,6 +366,10 @@ function makeResponse(url, requestRecord, signal) {
     status: state.nextResponse.status,
     url: state.nextResponse.url ?? String(url),
     headers: makeHeaders(state.nextResponse.headers),
+    body:
+      state.nextResponse.bodyText === null && state.nextResponse.jsonBody === null
+        ? null
+        : makeBodyStream(bodyText, signal, requestRecord, behavior),
     arrayBuffer() {
       if (this !== response) {
         throw makeNamedError("TypeError", "Illegal invocation");
@@ -397,6 +479,7 @@ globalThis.fetch = async function fetch(url, init = {}) {
     credentials: init.credentials == null ? null : String(init.credentials),
     cache: init.cache == null ? null : String(init.cache),
     aborted: false,
+    bodyCancelled: false,
   };
 
   state.requests.push(requestRecord);

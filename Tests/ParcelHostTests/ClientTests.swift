@@ -52,13 +52,11 @@
       from: exampleStatusURL,
       expecting: GenerateAccepted.self
     )
-    let expectedBody = try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
 
     #expect(accepted.value.statusURL == exampleStatusURL)
     #expect(accepted.response.status.code == 202)
     #expect(accepted.response.headerFields[.eTag] == "abc123")
     #expect(accepted.url == exampleStatusURL)
-    #expect(accepted.body == expectedBody)
   }
 
   @Test func customDecoderAppliesToClientDecodePath() async throws {
@@ -318,7 +316,7 @@
 
     let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
       HTTPRequest(method: .post, url: exampleGenerateURL),
-      body: Data("publish".utf8),
+      body: HTTPBody(Data("publish".utf8)),
       expecting: GenerateAccepted.self
     )
     let request = await transport.lastRequest
@@ -389,6 +387,26 @@
       Issue.record("Expected request to throw")
     } catch let error as ClientError {
       #expect(error == .unsuccessfulStatusCode(503, body: "unavailable"))
+    }
+  }
+
+  @Test func clientDecodeHonorsMaximumBufferedBodyBytes() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(statusCode: 200, body: Data("hello".utf8))
+    )
+    let client = Client(
+      configuration: ClientConfiguration(
+        bodyCoding: .plainText(),
+        maximumBufferedBodyBytes: 4
+      ),
+      transport: transport
+    )
+
+    do {
+      let _: String = try await client.get(from: exampleStatusURL)
+      Issue.record("Expected request to enforce the configured body limit")
+    } catch let error as HTTPBody.TooManyBytesError {
+      #expect(error == .init(maxBytes: 4))
     }
   }
 #endif

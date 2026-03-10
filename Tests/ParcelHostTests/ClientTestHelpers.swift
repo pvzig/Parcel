@@ -130,10 +130,10 @@
     headerFields: HTTPFields = [:],
     url: URL? = nil,
     body: Data? = nil
-  ) -> (response: HTTPResponse, body: Data?, url: URL?) {
-    (
+  ) -> TransportResponse {
+    TransportResponse(
       response: HTTPResponse(status: .init(code: statusCode), headerFields: headerFields),
-      body: body,
+      body: body.map(HTTPBody.init),
       url: url
     )
   }
@@ -144,19 +144,19 @@
     private(set) var lastBody: Data?
     private(set) var lastTimeout: Duration?
 
-    let response: (response: HTTPResponse, body: Data?, url: URL?)
+    let response: TransportResponse
 
-    init(response: (response: HTTPResponse, body: Data?, url: URL?)) {
+    init(response: TransportResponse) {
       self.response = response
     }
 
     func send(
       _ request: HTTPRequest,
-      body: Data?,
+      body: HTTPBody?,
       timeout: Duration?
-    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
+    ) async throws -> TransportResponse {
       lastRequest = request
-      lastBody = body
+      lastBody = try await body?.collect()
       lastTimeout = timeout
       return response
     }

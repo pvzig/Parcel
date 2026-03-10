@@ -1,18 +1,18 @@
 import Foundation
 import HTTPTypes
 
-public struct DecodedResponse<Value> {
-  public let value: Value
+public struct TransportResponse: Sendable {
   public let response: HTTPResponse
+  public let body: HTTPBody?
   public let url: URL?
 
   public init(
-    value: Value,
     response: HTTPResponse,
+    body: HTTPBody?,
     url: URL?
   ) {
-    self.value = value
     self.response = response
+    self.body = body
     self.url = url
   }
 }

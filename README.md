@@ -4,8 +4,8 @@ Parcel is a small browser HTTP client for SwiftWASM with pluggable typed body co
 defaults to JSON for `Encodable` request bodies and `Decodable` responses.
 
 Parcel uses Apple's [`swift-http-types`](https://github.com/apple/swift-http-types) directly for
-`HTTPRequest`, `HTTPResponse`, and `HTTPFields`. Parcel-specific state like buffered response
-bodies, timeouts, and final response URLs travels alongside those message heads instead of inside
+`HTTPRequest`, `HTTPResponse`, and `HTTPFields`. Parcel-specific state like async `HTTPBody`
+values, timeouts, and final response URLs travels alongside those message heads instead of inside
 custom wrappers.
 
 ## Usage
@@ -50,15 +50,26 @@ let accepted = try await client.postResponse(
 let statusCode = accepted.response.status.code
 let etag = accepted.response.headerFields[.eTag]
 let finalURL = accepted.url
-let rawBody = accepted.body
 let value = accepted.value
 ```
 
+Typed decode consumes the response body once. `DecodedResponse` preserves the decoded value, the
+response head, and the final URL, but it does not retain raw response bytes after decoding.
+
 If you work directly with a `Transport`, `send(_:, body:timeout:)` is a raw operation and may
-return `HTTPResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat
+return `TransportResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat
 non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
 
-On the browser transport path, `response.json()`, `response.text()`, and `response.arrayBuffer()` promise rejections surface as `ClientError.responseBodyFailure`, while Swift task cancellation throws `CancellationError`.
+```swift
+let request = HTTPRequest(method: .get, url: generateURL)
+let response = try await client.send(request)
+
+let statusCode = response.response.status.code
+let bodyText = try await response.body?.text()
+```
+
+On the browser transport path, `ReadableStreamDefaultReader.read()` failures surface as
+`ClientError.responseBodyFailure`, while Swift task cancellation throws `CancellationError`.
 
 For successful responses with no body, use `EmptyResponse`:
 
@@ -156,7 +167,8 @@ import JavaScriptEventLoop
 JavaScriptEventLoop.installGlobalExecutor()
 ```
 
-Raw browser transport responses are still buffered in full via `arrayBuffer()`. Parcel does not yet expose streaming `ReadableStream` response bodies.
+Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing
+request bodies are still buffered before Parcel passes them to `fetch`.
 
 ## Validation
 

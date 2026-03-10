@@ -11,6 +11,115 @@ import HTTPTypes
       let abortState: AbortState
     }
 
+    private final class ResponseBodyReader: @unchecked Sendable {
+      private enum State {
+        case open
+        case finished
+        case cancelled
+      }
+
+      private let readerObject: JSObject
+      private let abortState: AbortState
+      private let lock = NSLock()
+      private var state: State = .open
+
+      init(
+        readerObject: JSObject,
+        abortState: AbortState
+      ) {
+        self.readerObject = readerObject
+        self.abortState = abortState
+      }
+
+      deinit {
+        cancelIfNeeded()
+      }
+
+      func nextChunk() async throws -> HTTPBody.ByteChunk? {
+        guard let readPromiseObject = readerObject["read"]?().object,
+          let readPromise = JSPromise(readPromiseObject)
+        else {
+          throw ClientError.invalidResponseBody
+        }
+
+        let result = try await BrowserTransport.resolvePromise(
+          readPromise,
+          abortState: abortState,
+          operation: .bytes
+        )
+        guard let resultObject = result.object else {
+          throw ClientError.invalidResponseBody
+        }
+
+        if resultObject.done.boolean == true {
+          finish()
+          return nil
+        }
+
+        guard let valueObject = resultObject.value.object else {
+          throw ClientError.invalidResponseBody
+        }
+
+        let chunk = JSTypedArray<UInt8>(unsafelyWrapping: valueObject)
+          .withUnsafeBytes(Data.init(buffer:))
+        return ArraySlice(chunk)
+      }
+
+      func finish() {
+        lock.lock()
+        defer {
+          lock.unlock()
+        }
+
+        guard state == .open else {
+          return
+        }
+
+        _ = readerObject["releaseLock"]?()
+        state = .finished
+      }
+
+      private func cancelIfNeeded() {
+        lock.lock()
+        defer {
+          lock.unlock()
+        }
+
+        guard state == .open else {
+          return
+        }
+
+        _ = readerObject["cancel"]?()
+        state = .cancelled
+      }
+    }
+
+    private struct ResponseBodySequence: AsyncSequence, Sendable {
+      typealias Element = HTTPBody.ByteChunk
+
+      struct AsyncIterator: AsyncIteratorProtocol {
+        private let reader: ResponseBodyReader
+
+        init(reader: ResponseBodyReader) {
+          self.reader = reader
+        }
+
+        mutating func next() async throws -> Element? {
+          try await reader.nextChunk()
+        }
+      }
+
+      private let reader: ResponseBodyReader
+
+      init(reader: ResponseBodyReader) {
+        self.reader = reader
+      }
+
+      func makeAsyncIterator() -> AsyncIterator {
+        .init(reader: reader)
+      }
+    }
+
     private final class AbortState: @unchecked Sendable {
       private let controller: JSObject
       private var timedOut = false
@@ -76,6 +185,8 @@ import HTTPTypes
       }
     }
 
+    private let maximumBufferedRequestBodyBytes: Int
+
     public static var isSupportedRuntime: Bool {
       let globalObject = JSObject.global
       let hasRuntimeGlobalScope =
@@ -88,15 +199,22 @@ import HTTPTypes
         && globalObject.AbortController.function != nil
     }
 
-    public init() {
+    public init(
+      maximumBufferedRequestBodyBytes: Int = HTTPBody.defaultMaximumCollectedBytes
+    ) {
+      precondition(
+        maximumBufferedRequestBodyBytes >= 0,
+        "maximumBufferedRequestBodyBytes must be nonnegative"
+      )
+      self.maximumBufferedRequestBodyBytes = maximumBufferedRequestBodyBytes
       Self.installExecutorIfNeeded()
     }
 
     public func send(
       _ request: HTTPRequest,
-      body: Data?,
+      body: HTTPBody?,
       timeout: Duration?
-    ) async throws -> (response: HTTPResponse, body: Data?, url: URL?) {
+    ) async throws -> TransportResponse {
       let context = try await fetchResponseObject(
         for: request,
         body: body,
@@ -106,24 +224,24 @@ import HTTPTypes
       let statusCode = statusCode(from: responseObject)
       let headers = readHeaders(from: responseObject)
       let url = responseURL(from: responseObject)
-      let responseBody = try await readBody(
-        from: responseObject,
-        abortState: context.abortState
-      )
 
-      return (
+      return TransportResponse(
         response: HTTPResponse(
           status: .init(code: statusCode),
           headerFields: headers
         ),
-        body: responseBody,
-        url: url,
+        body: try makeBody(
+          from: responseObject,
+          headers: headers,
+          abortState: context.abortState
+        ),
+        url: url
       )
     }
 
     private func fetchResponseObject(
       for request: HTTPRequest,
-      body: Data?,
+      body: HTTPBody?,
       timeout: Duration?
     ) async throws -> FetchContext {
       Self.installExecutorIfNeeded()
@@ -153,8 +271,10 @@ import HTTPTypes
         options["headers"] = .object(headers)
       }
 
-      if let body, body.isEmpty == false {
-        options["body"] = JSTypedArray<UInt8>(body).jsValue
+      if let requestBody = try await bufferedRequestBody(body),
+        requestBody.isEmpty == false
+      {
+        options["body"] = JSTypedArray<UInt8>(requestBody).jsValue
       }
 
       guard let requestURL = request.url,
@@ -164,7 +284,7 @@ import HTTPTypes
         throw ClientError.invalidFetchResponse
       }
 
-      let responseValue = try await resolvePromise(
+      let responseValue = try await Self.resolvePromise(
         responsePromise,
         abortState: abortState
       )
@@ -206,65 +326,47 @@ import HTTPTypes
       return headers
     }
 
-    private func readBody(
+    private func makeBody(
       from responseObject: JSObject,
+      headers: HTTPFields,
       abortState: AbortState
-    ) async throws -> Data? {
-      guard let uint8ArrayConstructor = JSObject.global.Uint8Array.object else {
-        throw ClientError.invalidJavaScriptContext
-      }
-
-      guard let arrayBufferPromiseObject = responseObject["arrayBuffer"]?().object,
-        let arrayBufferPromise = JSPromise(arrayBufferPromiseObject)
-      else {
-        throw ClientError.invalidResponseBody
-      }
-
-      let arrayBuffer = try await resolvePromise(
-        arrayBufferPromise,
-        abortState: abortState,
-        operation: .bytes
-      )
-      let bytesArray = uint8ArrayConstructor.new(arrayBuffer)
-      return JSTypedArray<UInt8>(unsafelyWrapping: bytesArray)
-        .withUnsafeBytes(Data.init(buffer:))
-    }
-
-    private func readTextBody(
-      from responseObject: JSObject,
-      abortState: AbortState
-    ) async throws -> String? {
-      guard let textPromiseObject = responseObject["text"]?().object,
-        let textPromise = JSPromise(textPromiseObject)
-      else {
+    ) throws -> HTTPBody? {
+      guard let bodyObject = responseObject.body.object else {
         return nil
       }
 
-      return try await resolvePromise(
-        textPromise,
-        abortState: abortState,
-        operation: .text
-      ).string
+      guard let readerObject = bodyObject["getReader"]?().object else {
+        throw ClientError.invalidResponseBody
+      }
+
+      return HTTPBody(
+        ResponseBodySequence(
+          reader: ResponseBodyReader(
+            readerObject: readerObject,
+            abortState: abortState
+          )
+        ),
+        length: bodyLength(from: headers),
+        iterationBehavior: .single
+      )
     }
 
-    private func makeStatusError(
-      from responseObject: JSObject,
-      statusCode: Int,
-      abortState: AbortState
-    ) async throws -> ClientError {
-      do {
-        let body = try await readTextBody(
-          from: responseObject,
-          abortState: abortState
-        )
-        return .unsuccessfulStatusCode(statusCode, body: body)
-      } catch is CancellationError {
-        throw CancellationError()
-      } catch let error as ClientError where error == .timedOut {
-        throw error
-      } catch {
-        return .unsuccessfulStatusCode(statusCode, body: nil)
+    private func bufferedRequestBody(_ body: HTTPBody?) async throws -> Data? {
+      guard let body else {
+        return nil
       }
+
+      return try await body.collect(upTo: maximumBufferedRequestBodyBytes)
+    }
+
+    private func bodyLength(from headers: HTTPFields) -> HTTPBody.Length {
+      guard let contentLength = headers[.contentLength],
+        let length = Int64(contentLength)
+      else {
+        return .unknown
+      }
+
+      return .known(length)
     }
 
     private func makeAbortController() throws -> AbortState {
@@ -277,7 +379,7 @@ import HTTPTypes
       )
     }
 
-    private func resolvePromise(
+    private static func resolvePromise(
       _ promise: JSPromise,
       abortState: AbortState,
       operation: ClientError.ResponseBodyFailure.Operation? = nil
@@ -308,7 +410,7 @@ import HTTPTypes
       }
     }
 
-    private func responseBodyFailure(
+    private static func responseBodyFailure(
       from exception: JSException,
       operation: ClientError.ResponseBodyFailure.Operation
     ) -> ClientError {
@@ -325,20 +427,20 @@ import HTTPTypes
       )
     }
 
-    private func isAbortError(_ exception: JSException) -> Bool {
+    private static func isAbortError(_ exception: JSException) -> Bool {
       javaScriptErrorName(from: exception) == "AbortError"
     }
 
-    private func javaScriptErrorName(from exception: JSException) -> String? {
+    private static func javaScriptErrorName(from exception: JSException) -> String? {
       exception.thrownValue.object?.name.string
     }
 
-    private func javaScriptErrorMessage(from exception: JSException) -> String? {
+    private static func javaScriptErrorMessage(from exception: JSException) -> String? {
       exception.thrownValue.object?.message.string
         ?? exception.thrownValue.string
     }
 
-    private func javaScriptErrorStack(from exception: JSException) -> String? {
+    private static func javaScriptErrorStack(from exception: JSException) -> String? {
       exception.stack
         ?? exception.thrownValue.object?.stack.string
     }

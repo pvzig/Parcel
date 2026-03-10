@@ -6,7 +6,7 @@ public protocol Transport: Sendable {
   /// Higher-level callers are responsible for interpreting the returned status code.
   func send(
     _ request: HTTPRequest,
-    body: Data?,
+    body: HTTPBody?,
     timeout: Duration?
-  ) async throws -> (response: HTTPResponse, body: Data?, url: URL?)
+  ) async throws -> TransportResponse
 }
