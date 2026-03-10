@@ -32,8 +32,8 @@
     #expect(request?.url == exampleGenerateURL)
     #expect(request?.headerFields[.xClient] == "Parcel")
     #expect(request?.headerFields[.xTrace] == "123")
-    #expect(request?.headerFields[.accept] == nil)
-    #expect(request?.headerFields[.contentType] == nil)
+    #expect(request?.headerFields[.accept] == "application/json")
+    #expect(request?.headerFields[.contentType] == "application/json")
     #expect(decodedBody == GenerateRequest(pagePath: "/posts/example"))
   }
 
@@ -70,12 +70,14 @@
     )
     let client = Client(
       configuration: ClientConfiguration(
-        bodyCodec: JSONBodyCodec(
-          makeDecoder: {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return decoder
-          }
+        bodyCoding: .json(
+          codec: JSONBodyCodec(
+            makeDecoder: {
+              let decoder = JSONDecoder()
+              decoder.dateDecodingStrategy = .iso8601
+              return decoder
+            }
+          )
         )
       ),
       transport: transport
@@ -94,7 +96,13 @@
       )
     )
     let client = Client(
-      configuration: ClientConfiguration(bodyCodec: PlainTextCodec()),
+      configuration: ClientConfiguration(
+        bodyCoding: .init(
+          codec: PlainTextCodec(),
+          requestContentType: "text/plain",
+          accept: ["text/plain"]
+        )
+      ),
       transport: transport
     )
 
@@ -103,9 +111,12 @@
       to: exampleGenerateURL
     )
 
+    let request = await transport.lastRequest
     let body = try #require(await transport.lastBody)
 
     #expect(accepted == "accepted")
+    #expect(request?.headerFields[.accept] == "text/plain")
+    #expect(request?.headerFields[.contentType] == "text/plain")
     #expect(String(decoding: body, as: UTF8.self) == "publish")
   }
 
@@ -137,7 +148,7 @@
       ])
   }
 
-  @Test func typedRequestsDoNotAddJSONHeadersByDefault() async throws {
+  @Test func typedRequestsApplyBodyCodingAcceptHeaderByDefault() async throws {
     let transport = RecordingTransport(
       response: fixtureResponse(
         statusCode: 200,
@@ -149,11 +160,11 @@
     let _: GenerateAccepted = try await client.get(from: exampleStatusURL)
     let request = await transport.lastRequest
 
-    #expect(request?.headerFields[.accept] == nil)
+    #expect(request?.headerFields[.accept] == "application/json")
     #expect(request?.headerFields[.contentType] == nil)
   }
 
-  @Test func rawRequestSendMergesDefaultHeadersWithoutAddingJSONHeaders() async throws {
+  @Test func rawRequestSendMergesDefaultHeadersWithoutAddingBodyCodingHeaders() async throws {
     let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
     let client = Client(
       configuration: ClientConfiguration(defaultHeaders: [.xClient: "Parcel"]),
@@ -174,6 +185,26 @@
     #expect(request?.headerFields[.xClient] == "Parcel")
     #expect(request?.headerFields[.xTrace] == "123")
     #expect(request?.headerFields[.accept] == nil)
+    #expect(request?.headerFields[.contentType] == nil)
+  }
+
+  @Test func typedRawRequestSendAddsAcceptWithoutAddingContentType() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 200,
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
+      )
+    )
+    let client = Client(transport: transport)
+
+    let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
+      HTTPRequest(method: .post, url: exampleGenerateURL),
+      body: Data("publish".utf8),
+      expecting: GenerateAccepted.self
+    )
+    let request = await transport.lastRequest
+
+    #expect(request?.headerFields[.accept] == "application/json")
     #expect(request?.headerFields[.contentType] == nil)
   }
 

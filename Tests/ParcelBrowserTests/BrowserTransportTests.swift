@@ -96,7 +96,13 @@
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
       let client = Client(
-        configuration: ClientConfiguration(bodyCodec: PlainTextCodec()),
+        configuration: ClientConfiguration(
+          bodyCoding: .init(
+            codec: PlainTextCodec(),
+            requestContentType: "text/plain",
+            accept: ["text/plain"]
+          )
+        ),
         transport: transport
       )
 
@@ -115,8 +121,8 @@
       let recordedRequest = try #require(harness.recordedRequests().first)
 
       #expect(accepted == "accepted")
-      #expect(recordedRequest.headers["Accept"] == nil)
-      #expect(recordedRequest.headers["Content-Type"] == nil)
+      #expect(recordedRequest.headers["Accept"] == "text/plain")
+      #expect(recordedRequest.headers["Content-Type"] == "text/plain")
       #expect(recordedRequest.bodyText == "publish")
     }
 

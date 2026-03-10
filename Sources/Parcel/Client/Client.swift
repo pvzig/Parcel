@@ -231,7 +231,7 @@ public struct Client: Sendable {
     expecting responseType: Response.Type = Response.self
   ) async throws -> DecodedResponse<Response> {
     try await execute(
-      prepare(request),
+      prepare(request, includeRequestContentType: false, includeAccept: true),
       body: body,
       timeout: timeout,
       expecting: responseType
@@ -265,7 +265,9 @@ public struct Client: Sendable {
       makeRequest(
         method: method,
         url: url,
-        headers: headers
+        headers: headers,
+        includeRequestContentType: false,
+        includeAccept: true
       ),
       body: nil,
       timeout: timeout,
@@ -303,9 +305,11 @@ public struct Client: Sendable {
       makeRequest(
         method: method,
         url: url,
-        headers: headers
+        headers: headers,
+        includeRequestContentType: true,
+        includeAccept: true
       ),
-      body: try configuration.bodyCodec.encode(body),
+      body: try configuration.bodyCoding.codec.encode(body),
       timeout: timeout,
       expecting: responseType
     )
@@ -337,7 +341,7 @@ public struct Client: Sendable {
     }
 
     if let body = response.body, body.isEmpty == false {
-      let value = try configuration.bodyCodec.decode(responseType, from: body)
+      let value = try configuration.bodyCoding.codec.decode(responseType, from: body)
       return DecodedResponse(
         value: value,
         response: response.response,
@@ -369,18 +373,57 @@ public struct Client: Sendable {
   private func makeRequest(
     method: HTTPRequest.Method,
     url: URL,
-    headers: HTTPFields
+    headers: HTTPFields,
+    includeRequestContentType: Bool,
+    includeAccept: Bool
   ) -> HTTPRequest {
-    HTTPRequest(
+    var headers = mergedHeaders(additionalHeaders: headers)
+    applyBodyCodingHeaders(
+      to: &headers,
+      includeRequestContentType: includeRequestContentType,
+      includeAccept: includeAccept
+    )
+
+    return HTTPRequest(
       method: method,
       url: url,
-      headerFields: mergedHeaders(additionalHeaders: headers)
+      headerFields: headers
     )
   }
 
-  private func prepare(_ request: HTTPRequest) -> HTTPRequest {
+  private func prepare(
+    _ request: HTTPRequest,
+    includeRequestContentType: Bool = false,
+    includeAccept: Bool = false
+  ) -> HTTPRequest {
     var request = request
     request.headerFields = mergedHeaders(additionalHeaders: request.headerFields)
+    applyBodyCodingHeaders(
+      to: &request.headerFields,
+      includeRequestContentType: includeRequestContentType,
+      includeAccept: includeAccept
+    )
     return request
+  }
+
+  private func applyBodyCodingHeaders(
+    to headers: inout HTTPFields,
+    includeRequestContentType: Bool,
+    includeAccept: Bool
+  ) {
+    if includeRequestContentType,
+      headers[.contentType] == nil,
+      let requestContentType = configuration.bodyCoding.requestContentType
+    {
+      headers.append(.init(name: .contentType, value: requestContentType))
+    }
+
+    if includeAccept,
+      headers[.accept] == nil
+    {
+      for value in configuration.bodyCoding.accept {
+        headers.append(.init(name: .accept, value: value))
+      }
+    }
   }
 }

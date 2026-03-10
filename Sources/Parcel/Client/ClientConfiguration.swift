@@ -2,13 +2,13 @@ import HTTPTypes
 
 public struct ClientConfiguration: Sendable {
   public var defaultHeaders: HTTPFields
-  public var bodyCodec: any BodyCodec
+  public var bodyCoding: BodyCodingConfiguration
 
   public init(
     defaultHeaders: HTTPFields = [:],
-    bodyCodec: any BodyCodec = JSONBodyCodec()
+    bodyCoding: BodyCodingConfiguration = .json()
   ) {
     self.defaultHeaders = defaultHeaders
-    self.bodyCodec = bodyCodec
+    self.bodyCoding = bodyCoding
   }
 }

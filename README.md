@@ -67,18 +67,24 @@ let deleteURL = URL(string: "https://example.com/api/delete")!
 let _: EmptyResponse = try await client.delete(from: deleteURL)
 ```
 
+Typed requests use the configured body-coding defaults for `Accept` and, when Parcel encodes the
+request body, `Content-Type`. The default configuration uses JSON and sets both to
+`application/json`.
+
 If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec`
 through `ClientConfiguration`:
 
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
-        bodyCodec: JSONBodyCodec(
-            makeDecoder: {
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                return decoder
-            }
+        bodyCoding: .json(
+            codec: JSONBodyCodec(
+                makeDecoder: {
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    return decoder
+                }
+            )
         )
     )
 )
@@ -106,7 +112,13 @@ struct PlainTextCodec: BodyCodec {
 }
 
 let client = Client(
-    configuration: ClientConfiguration(bodyCodec: PlainTextCodec())
+    configuration: ClientConfiguration(
+        bodyCoding: .init(
+            codec: PlainTextCodec(),
+            requestContentType: "text/plain",
+            accept: ["text/plain"]
+        )
+    )
 )
 ```
 

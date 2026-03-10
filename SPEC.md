@@ -11,6 +11,7 @@ Parcel exposes:
 - `Client`
 - `ClientConfiguration`
 - `BodyCodec`
+- `BodyCodingConfiguration`
 - `JSONBodyCodec`
 - `swift-http-types` message-head types used directly by Parcel's public API, including
   `HTTPField`, `HTTPFields`, `HTTPRequest`, and `HTTPResponse`
@@ -25,17 +26,19 @@ Parcel exposes:
 - `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points that accept `Foundation.URL` request targets.
 - `Client` also provides `getResponse`, `headResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
 - `Client.send(_ request: HTTPRequest, body:timeout:)` exposes raw request execution while appending configured default header fields without auto-injecting codec-specific request headers.
-- `Client.sendResponse(_ request: HTTPRequest, body:timeout:, expecting:)` decodes a caller-provided raw request while preserving the same default-header append behavior as raw sends.
+- `Client.sendResponse(_ request: HTTPRequest, body:timeout:, expecting:)` decodes a caller-provided raw request while appending the configured default `Accept` header values when the request does not already provide them.
 - Typed request bodies are encoded with the configured `BodyCodec`.
 - Typed response bodies are decoded with the configured `BodyCodec`.
-- `Client` does not inject `Accept` or `Content-Type` defaults for typed requests; callers must supply any content-negotiation headers explicitly.
+- `BodyCodingConfiguration` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
+- Typed `Client` request builders append the configured `Accept` header values when the request does not already provide `Accept`.
+- Typed `Client` request builders append the configured `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
   field semantics instead of maintaining custom protocol primitives.
 - `HTTPFields` preserves repeated header values and resolves lookups case-insensitively according to `swift-http-types`.
 - Configured default header fields are appended ahead of per-call header fields without custom override logic.
 - Typed `Client` entry points throw `ClientError.unsuccessfulStatusCode` for non-2xx responses before decoding.
 - Empty successful responses can be decoded as `EmptyResponse`.
-- `ClientConfiguration` allows callers to supply a default `BodyCodec`; `JSONBodyCodec` is the default implementation.
+- `ClientConfiguration` allows callers to supply a default `BodyCodingConfiguration`; `BodyCodingConfiguration.json()` is the default implementation.
 - `JSONBodyCodec` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
 - Successful typed responses preserve the raw response bytes and final response `URL?` on `DecodedResponse` while decoding from that same buffered body.
 - Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for byte and text body reads.
