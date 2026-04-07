@@ -1,11 +1,15 @@
 import Foundation
 import HTTPTypes
 
+/// Sends typed Parcel requests through a `Transport` and decodes successful responses using the
+/// selected `Codec`.
 public struct Client: Sendable {
+  /// The configuration used to prepare requests and decode responses.
   public let configuration: ClientConfiguration
   private let transport: any Transport
 
   #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)
+    /// Creates a client that uses Parcel's built-in browser transport.
     public init(configuration: ClientConfiguration = .init()) {
       self.init(
         configuration: configuration,
@@ -19,11 +23,13 @@ public struct Client: Sendable {
       message:
         "Client() is only available when Parcel can select its built-in browser transport. Inject a Transport on host builds."
     )
+    /// Creates a client that uses Parcel's built-in browser transport.
     public init(configuration: ClientConfiguration = .init()) {
       fatalError("Client() is unavailable on this platform")
     }
   #endif
 
+  /// Creates a client with an explicit transport.
   public init(
     configuration: ClientConfiguration = .init(),
     transport: any Transport
@@ -32,199 +38,33 @@ public struct Client: Sendable {
     self.transport = transport
   }
 
-  public func get<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .get,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func head<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .head,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func delete<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .delete,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func post<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .post,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func put<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .put,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func patch<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      .patch,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func getResponse<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .get,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
+  /// Sends a typed request and decodes the response body as `Value`.
+  public func send<Value: Decodable>(
+    _ request: Request,
+    as responseType: Value.Type = Value.self,
+    codec: Codec? = nil,
+    timeout: Duration? = nil
+  ) async throws -> Response<Value> {
+    let codec = effectiveCodec(codec)
+    let response = try await transport.send(
+      makeRequest(
+        from: request,
+        includeRequestContentType: request.hasBody,
+        includeAccept: true,
+        codec: codec
+      ),
+      body: try request.encodedBody(using: codec),
+      timeout: effectiveTimeout(timeout)
+    )
+    return try await decode(
+      response,
+      as: responseType,
+      using: codec
     )
   }
 
-  public func headResponse<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .head,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func deleteResponse<Response: Decodable>(
-    from url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .delete,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func postResponse<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .post,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func putResponse<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .put,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func patchResponse<Request: Encodable, Response: Decodable>(
-    _ body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await sendResponse(
-      .patch,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func send(
+  /// Sends a raw request without applying codec-specific body encoding or headers.
+  public func raw(
     _ request: HTTPRequest,
     body: HTTPBody? = nil,
     timeout: Duration? = nil
@@ -236,115 +76,11 @@ public struct Client: Sendable {
     )
   }
 
-  public func sendResponse<Response: Decodable>(
-    _ request: HTTPRequest,
-    body: HTTPBody? = nil,
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await execute(
-      prepare(request, includeRequestContentType: false, includeAccept: true),
-      body: body,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func send<Response: Decodable>(
-    _ method: HTTPRequest.Method,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      method,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func sendResponse<Response: Decodable>(
-    _ method: HTTPRequest.Method,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    try await execute(
-      makeRequest(
-        method: method,
-        url: url,
-        headers: headers,
-        includeRequestContentType: false,
-        includeAccept: true
-      ),
-      body: nil,
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  public func send<Request: Encodable, Response: Decodable>(
-    _ method: HTTPRequest.Method,
-    body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> Response {
-    try await sendResponse(
-      method,
-      body: body,
-      to: url,
-      headers: headers,
-      timeout: timeout,
-      expecting: responseType
-    ).value
-  }
-
-  public func sendResponse<Request: Encodable, Response: Decodable>(
-    _ method: HTTPRequest.Method,
-    body: Request,
-    to url: URL,
-    headers: HTTPFields = [:],
-    timeout: Duration? = nil,
-    expecting responseType: Response.Type = Response.self
-  ) async throws -> DecodedResponse<Response> {
-    return try await execute(
-      makeRequest(
-        method: method,
-        url: url,
-        headers: headers,
-        includeRequestContentType: true,
-        includeAccept: true
-      ),
-      body: HTTPBody(try configuration.bodyCoding.codec.encode(body)),
-      timeout: timeout,
-      expecting: responseType
-    )
-  }
-
-  private func execute<Response: Decodable>(
-    _ request: HTTPRequest,
-    body: HTTPBody?,
-    timeout: Duration?,
-    expecting responseType: Response.Type
-  ) async throws -> DecodedResponse<Response> {
-    let response = try await transport.send(
-      request,
-      body: body,
-      timeout: effectiveTimeout(timeout)
-    )
-    return try await decode(response, as: responseType)
-  }
-
-  private func decode<Response: Decodable>(
+  private func decode<Value: Decodable>(
     _ response: TransportResponse,
-    as responseType: Response.Type
-  ) async throws -> DecodedResponse<Response> {
+    as responseType: Value.Type,
+    using codec: Codec
+  ) async throws -> Response<Value> {
     guard (200..<300).contains(response.response.status.code) else {
       throw ClientError.unsuccessfulStatusCode(
         response.response.status.code,
@@ -359,8 +95,8 @@ public struct Client: Sendable {
         upTo: configuration.maximumBufferedBodyBytes
       )
       if bufferedBody.isEmpty == false {
-        let value = try configuration.bodyCoding.codec.decode(responseType, from: bufferedBody)
-        return DecodedResponse(
+        let value = try codec.decode(responseType, from: bufferedBody)
+        return Response(
           value: value,
           response: response.response,
           url: response.url
@@ -369,9 +105,9 @@ public struct Client: Sendable {
     }
 
     if responseType == EmptyResponse.self,
-      let emptyResponse = EmptyResponse() as? Response
+      let emptyResponse = EmptyResponse() as? Value
     {
-      return DecodedResponse(
+      return Response(
         value: emptyResponse,
         response: response.response,
         url: response.url
@@ -391,50 +127,46 @@ public struct Client: Sendable {
     timeout ?? configuration.defaultTimeout
   }
 
+  private func effectiveCodec(_ codec: Codec?) -> Codec {
+    codec ?? configuration.defaultCodec
+  }
+
   private func makeRequest(
-    method: HTTPRequest.Method,
-    url: URL,
-    headers: HTTPFields,
+    from request: Request,
     includeRequestContentType: Bool,
-    includeAccept: Bool
+    includeAccept: Bool,
+    codec: Codec
   ) -> HTTPRequest {
-    var headers = mergedHeaders(additionalHeaders: headers)
-    applyBodyCodingHeaders(
+    var headers = mergedHeaders(additionalHeaders: request.headers)
+    applyCodecHeaders(
       to: &headers,
       includeRequestContentType: includeRequestContentType,
-      includeAccept: includeAccept
+      includeAccept: includeAccept,
+      codec: codec
     )
 
     return HTTPRequest(
-      method: method,
-      url: url,
+      method: request.method,
+      url: request.url,
       headerFields: headers
     )
   }
 
-  private func prepare(
-    _ request: HTTPRequest,
-    includeRequestContentType: Bool = false,
-    includeAccept: Bool = false
-  ) -> HTTPRequest {
+  private func prepare(_ request: HTTPRequest) -> HTTPRequest {
     var request = request
     request.headerFields = mergedHeaders(additionalHeaders: request.headerFields)
-    applyBodyCodingHeaders(
-      to: &request.headerFields,
-      includeRequestContentType: includeRequestContentType,
-      includeAccept: includeAccept
-    )
     return request
   }
 
-  private func applyBodyCodingHeaders(
+  private func applyCodecHeaders(
     to headers: inout HTTPFields,
     includeRequestContentType: Bool,
-    includeAccept: Bool
+    includeAccept: Bool,
+    codec: Codec
   ) {
     if includeRequestContentType,
       headers[.contentType] == nil,
-      let requestContentType = configuration.bodyCoding.requestContentType
+      let requestContentType = codec.requestContentType
     {
       headers.append(.init(name: .contentType, value: requestContentType))
     }
@@ -442,7 +174,7 @@ public struct Client: Sendable {
     if includeAccept,
       headers[.accept] == nil
     {
-      for value in configuration.bodyCoding.accept {
+      for value in codec.accept {
         headers.append(.init(name: .accept, value: value))
       }
     }

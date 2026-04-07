@@ -10,8 +10,10 @@ Parcel exposes:
 
 - `Client`
 - `ClientConfiguration`
+- `Client.Request`
+- `Client.Response`
+- `Client.Codec`
 - `BodyCodec`
-- `BodyCodingConfiguration`
 - `JSONBodyCodec`
 - `FormURLEncodedBodyCodec`
 - `PlainTextBodyCodec`
@@ -20,7 +22,6 @@ Parcel exposes:
 - `swift-http-types` message-head types used directly by Parcel's public API, including
   `HTTPField`, `HTTPFields`, `HTTPRequest`, and `HTTPResponse`
 - `TransportResponse`
-- `DecodedResponse`
 - `EmptyResponse`
 - `Transport`
 - `BrowserTransport` on `wasm32` builds that include Parcel's browser transport
@@ -28,33 +29,35 @@ Parcel exposes:
 
 ## Behavior
 
-- `Client` provides `get`, `head`, `delete`, `post`, `put`, `patch`, and generic `send` entry points that accept `Foundation.URL` request targets.
-- `Client` also provides `getResponse`, `headResponse`, `deleteResponse`, `postResponse`, `putResponse`, `patchResponse`, and `sendResponse` entry points that preserve response metadata.
+- `Client.send(_:, as:codec:timeout:)` is Parcel's single typed request entry point.
+- `Client.raw(_:, body:timeout:)` is Parcel's raw escape hatch for direct `HTTPRequest` execution.
+- `Client.Request` models typed requests through an explicit method, URL, headers, and optional typed body.
+- `Client.Request` provides convenience factories for `get`, `head`, `delete`, `post`, `put`, and `patch`.
+- `Client.Response<Value>` preserves the decoded value, response head, and final response URL.
 - `HTTPBody` is Parcel's async byte-stream abstraction for request and response bodies, with optional known length, iteration behavior, and helper collection APIs.
 - `HTTPBody.collect(upTo:)` and `HTTPBody.text(upTo:)` default to a 2 MiB in-memory collection limit; callers can raise that limit or opt into `.max` explicitly.
-- `Client.send(_ request: HTTPRequest, body:timeout:)` exposes raw request execution while appending configured default header fields without auto-injecting codec-specific request headers.
-- `Client.sendResponse(_ request: HTTPRequest, body:timeout:, expecting:)` decodes a caller-provided raw request while appending the configured default `Accept` header values when the request does not already provide them.
+- `Client.raw(_:, body:timeout:)` appends configured default header fields without auto-injecting codec-specific request headers.
 - Raw request and response bodies travel separately from `swift-http-types` heads as `HTTPBody?`.
-- Typed request bodies are encoded with the configured `BodyCodec` and wrapped in `HTTPBody`.
-- Typed response bodies are decoded by collecting the response `HTTPBody` up to `maximumBufferedBodyBytes` and passing the resulting bytes through the configured `BodyCodec`.
-- `BodyCodingConfiguration` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
-- `BodyCodingConfiguration` provides convenience factories for JSON, form URL-encoded, plain-text, and raw-data body coding.
+- Typed request bodies are encoded with the selected `Client.Codec` and wrapped in `HTTPBody`.
+- Typed response bodies are decoded by collecting the response `HTTPBody` up to `maximumBufferedBodyBytes` and passing the resulting bytes through the selected `Client.Codec`.
+- `Client.Codec` wraps a `BodyCodec` plus optional default `Content-Type` and `Accept` header values for typed requests.
+- `Client.Codec` provides convenience factories for JSON, form URL-encoded, plain-text, raw-data, and custom body coding.
 - `ClientConfiguration` also carries an optional `defaultTimeout`, which defaults to 90 seconds and is used whenever a per-call timeout is omitted.
 - `ClientConfiguration` also carries `maximumBufferedBodyBytes`, which defaults to 2 MiB and is used when Parcel must buffer response bytes in memory for decoding or error reporting.
-- Typed `Client` request builders append the configured `Accept` header values when the request does not already provide `Accept`.
-- Typed `Client` request builders append the configured `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
+- `ClientConfiguration` carries a default `Client.Codec`; `Client.Codec.json()` is the default implementation.
+- Typed `Client.Request` values append the selected codec's `Accept` header values when the request does not already provide `Accept`.
+- Typed `Client.Request` values append the selected codec's `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
   field semantics instead of maintaining custom protocol primitives.
 - `HTTPFields` preserves repeated header values and resolves lookups case-insensitively according to `swift-http-types`.
 - Configured default header fields are appended ahead of per-call header fields without custom override logic.
-- Typed `Client` entry points throw `ClientError.unsuccessfulStatusCode` for non-2xx responses before decoding.
+- Typed `Client.send` throws `ClientError.unsuccessfulStatusCode` for non-2xx responses before decoding.
 - Empty successful responses can be decoded as `EmptyResponse`.
-- `ClientConfiguration` allows callers to supply a default `BodyCodingConfiguration`; `BodyCodingConfiguration.json()` is the default implementation.
 - `JSONBodyCodec` allows callers to supply custom `JSONEncoder` / `JSONDecoder` factories.
 - `FormURLEncodedBodyCodec` supports flat top-level keyed payloads and repeated keys for array values, but does not support nested keyed containers.
 - `PlainTextBodyCodec` encodes and decodes UTF-8 `String` values.
 - `RawDataBodyCodec` encodes and decodes raw `Data` values.
-- Successful typed responses preserve the final response `URL?` on `DecodedResponse`, but typed decoding consumes the response body and does not preserve raw response bytes afterward.
+- Successful typed responses preserve the final response `URL?` on `Client.Response`, but typed decoding consumes the response body and does not preserve raw response bytes afterward.
 - Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for streamed byte reads and derived text reads.
 - Browser request or response-body cancellation throws `CancellationError`.
 - Browser request and response-body timeouts throw `ClientError.timedOut`.

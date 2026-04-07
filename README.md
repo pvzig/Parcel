@@ -25,34 +25,28 @@ struct AcceptedResponse: Decodable {
 ```swift
 let client = Client()
 
-let accepted: AcceptedResponse = try await client.post(
-    GenerateRequest(pagePath: "/posts/example"),
-    to: URL(string: "https://example.com/api/generate")!
-)
-```
-
-If you need response metadata like headers or the final URL:
-
-```swift
-let accepted = try await client.postResponse(
-    GenerateRequest(pagePath: "/posts/example"),
-    to: generateURL,
-    expecting: AcceptedResponse.self
+let accepted = try await client.send(
+    .post(
+        URL(string: "https://example.com/api/generate")!,
+        body: GenerateRequest(pagePath: "/posts/example")
+    ),
+    as: AcceptedResponse.self
 )
 
+// response metadata
 let statusCode = accepted.response.status.code
 let etag = accepted.response.headerFields[.eTag]
 let finalURL = accepted.url
 let value = accepted.value
 ```
 
-Typed decode consumes the response body once. `DecodedResponse` preserves the decoded value, the response head, and the final URL, but it does not retain raw response bytes after decoding.
+Typed decode consumes the response body once. `Client.Response` preserves the decoded value, the response head, and the final URL, but it does not retain raw response bytes after decoding.
 
-If you work directly with raw requests through `Client.send(_:, body:timeout:)`, or with a custom `Transport`, you may receive `TransportResponse` values with 4xx or 5xx status codes. Parcel's typed `Client` APIs treat non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
+If you need to drop to a raw request, use `Client.raw(_:, body:timeout:)`. Raw calls do not apply codec-specific `Accept` or `Content-Type` defaults. Raw responses may carry 4xx or 5xx status codes; typed `Client.send` calls treat non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
 
 ```swift
 let request = HTTPRequest(method: .get, url: generateURL)
-let response = try await client.send(request)
+let response = try await client.raw(request)
 
 let statusCode = response.response.status.code
 let bodyText = try await response.body?.text()
@@ -66,18 +60,21 @@ For successful responses with no body, use `EmptyResponse`:
 
 ```swift
 let deleteURL = URL(string: "https://example.com/api/delete")!
-let _: EmptyResponse = try await client.delete(from: deleteURL)
+let response = try await client.send(
+    .delete(deleteURL),
+    as: EmptyResponse.self
+)
 ```
 
-Typed requests use the configured body-coding defaults for `Accept` and, when Parcel encodes the request body, `Content-Type`. The default configuration uses JSON and sets both to `application/json`. Parcel also applies a default request timeout of 90 seconds unless you override it per call or set `defaultTimeout` to `nil`. Buffered response decoding and error-body reads use a 2 MiB default cap, configurable via `ClientConfiguration(maximumBufferedBodyBytes:)`.
+Typed requests use the selected codec's defaults for `Accept` and, when Parcel encodes the request body, `Content-Type`. The default codec uses JSON and sets both to `application/json`. Parcel also applies a default request timeout of 90 seconds unless you override it per call or set `defaultTimeout` to `nil`. Buffered response decoding and error-body reads use a 2 MiB default cap, configurable via `ClientConfiguration(maximumBufferedBodyBytes:)`.
 
-If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default `JSONBodyCodec` through `ClientConfiguration`:
+If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default codec through `ClientConfiguration`:
 
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
         defaultTimeout: .seconds(30),
-        bodyCoding: .json(
+        defaultCodec: .json(
             codec: JSONBodyCodec(
                 makeDecoder: {
                     let decoder = JSONDecoder()
@@ -90,19 +87,25 @@ let client = Client(
 )
 ```
 
-Parcel also includes built-in helpers for a few common non-JSON wire formats:
+Parcel also includes built-in per-call helpers for a few common non-JSON wire formats:
 
 ```swift
-let formClient = Client(
-    configuration: ClientConfiguration(bodyCoding: .formURLEncoded())
+let formResponse = try await client.send(
+    .post(generateURL, body: payload),
+    as: TokenExchangePayload.self,
+    codec: .formURLEncoded()
 )
 
-let textClient = Client(
-    configuration: ClientConfiguration(bodyCoding: .plainText())
+let textResponse = try await client.send(
+    .post(generateURL, body: "publish"),
+    as: String.self,
+    codec: .plainText()
 )
 
-let binaryClient = Client(
-    configuration: ClientConfiguration(bodyCoding: .rawData())
+let binaryResponse = try await client.send(
+    .post(generateURL, body: Data([0x00, 0x01])),
+    as: Data.self,
+    codec: .rawData()
 )
 ```
 
@@ -127,8 +130,8 @@ struct CustomCodec: BodyCodec {
 
 let client = Client(
     configuration: ClientConfiguration(
-        bodyCoding: .init(
-            codec: CustomCodec(),
+        defaultCodec: .custom(
+            CustomCodec(),
             requestContentType: "application/custom",
             accept: ["application/custom"]
         )

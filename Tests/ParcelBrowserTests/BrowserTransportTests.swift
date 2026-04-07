@@ -98,9 +98,9 @@
         jsonBody: #"{"statusUrl":"https://example.com/status"}"#
       )
 
-      let accepted = try await client.sendResponse(
-        HTTPRequest(method: .get, url: exampleStatusURL),
-        expecting: GenerateAccepted.self
+      let accepted = try await client.send(
+        .get(exampleStatusURL),
+        as: GenerateAccepted.self
       )
 
       #expect(accepted.value == GenerateAccepted(statusURL: exampleStatusURL))
@@ -112,12 +112,7 @@
     @Test func clientDecodePathOverBrowserTransportUsesConfiguredBodyCodec() async throws {
       let harness = try BrowserTestHarness()
       let transport = BrowserTransport()
-      let client = Client(
-        configuration: ClientConfiguration(
-          bodyCoding: .plainText()
-        ),
-        transport: transport
-      )
+      let client = Client(transport: transport)
 
       try harness.reset()
       try harness.configureResponse(
@@ -127,13 +122,14 @@
         bodyText: "accepted"
       )
 
-      let accepted: String = try await client.post(
-        "publish",
-        to: exampleGenerateURL
+      let accepted = try await client.send(
+        .post(exampleGenerateURL, body: "publish"),
+        as: String.self,
+        codec: .plainText()
       )
       let recordedRequest = try #require(harness.recordedRequests().first)
 
-      #expect(accepted == "accepted")
+      #expect(accepted.value == "accepted")
       #expect(recordedRequest.headers["Accept"] == "text/plain")
       #expect(recordedRequest.headers["Content-Type"] == "text/plain")
       #expect(recordedRequest.bodyText == "publish")
@@ -157,9 +153,9 @@
         jsonBody: #"{"statusUrl":"https://example.com/status"}"#
       )
 
-      let _: GenerateAccepted = try await client.get(
-        from: exampleStatusURL,
-        headers: [.accept: "application/json"]
+      let _ = try await client.send(
+        .get(exampleStatusURL, headers: [.accept: "application/json"]),
+        as: GenerateAccepted.self
       )
       let recordedRequest = try #require(harness.recordedRequests().first)
 
@@ -184,9 +180,9 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          expecting: GenerateAccepted.self
+        let _: Client.Response<GenerateAccepted> = try await client.send(
+          .get(exampleStatusURL),
+          as: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
       } catch is DecodingError {
@@ -206,9 +202,9 @@
       try harness.configureResponse(statusCode: 503)
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          expecting: GenerateAccepted.self
+        let _: Client.Response<GenerateAccepted> = try await client.send(
+          .get(exampleStatusURL),
+          as: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
       } catch let error as ClientError {
@@ -230,9 +226,9 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          expecting: GenerateAccepted.self
+        let _: Client.Response<GenerateAccepted> = try await client.send(
+          .get(exampleStatusURL),
+          as: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
       } catch let error as ClientError {
@@ -250,9 +246,9 @@
       try harness.reset()
       try harness.configureResponse(statusCode: 204)
 
-      let response = try await client.sendResponse(
-        HTTPRequest(method: .delete, url: exampleStatusURL),
-        expecting: EmptyResponse.self
+      let response = try await client.send(
+        .delete(exampleStatusURL),
+        as: EmptyResponse.self
       )
 
       #expect(response.value == EmptyResponse())
@@ -272,9 +268,9 @@
       )
 
       do {
-        let _: DecodedResponse<EmptyResponse> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          expecting: EmptyResponse.self
+        let _: Client.Response<EmptyResponse> = try await client.send(
+          .get(exampleStatusURL),
+          as: EmptyResponse.self
         )
         Issue.record("Expected request to throw")
       } catch is DecodingError {
@@ -425,9 +421,9 @@
       )
 
       do {
-        let _: DecodedResponse<GenerateAccepted> = try await client.sendResponse(
-          HTTPRequest(method: .get, url: exampleStatusURL),
-          expecting: GenerateAccepted.self
+        let _: Client.Response<GenerateAccepted> = try await client.send(
+          .get(exampleStatusURL),
+          as: GenerateAccepted.self
         )
         Issue.record("Expected request to throw")
       } catch let error as ClientError {
