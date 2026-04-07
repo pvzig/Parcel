@@ -45,8 +45,8 @@ Parcel exposes:
 - `ClientConfiguration` also carries an optional `defaultTimeout`, which defaults to 90 seconds and is used whenever a per-call timeout is omitted.
 - `ClientConfiguration` also carries `maximumBufferedBodyBytes`, which defaults to 2 MiB and is used when Parcel must buffer response bytes in memory for decoding or error reporting.
 - `ClientConfiguration` carries a default `Client.Codec`; `Client.Codec.json()` is the default implementation.
-- Typed `Client.Request` values append the selected codec's `Accept` header values when the request does not already provide `Accept`.
-- Typed `Client.Request` values append the selected codec's `Content-Type` header when Parcel encodes the request body and the request does not already provide `Content-Type`.
+- Typed requests append the selected codec's `Accept` header values only when the merged client-default and per-request headers do not already provide `Accept`.
+- Typed requests append the selected codec's `Content-Type` header only when Parcel encodes the request body and the merged client-default and per-request headers do not already provide `Content-Type`.
 - Parcel uses `swift-http-types` for HTTP method, status, request-head, response-head, and header
   field semantics instead of maintaining custom protocol primitives.
 - `HTTPFields` preserves repeated header values and resolves lookups case-insensitively according to `swift-http-types`.
@@ -58,7 +58,7 @@ Parcel exposes:
 - `PlainTextBodyCodec` encodes and decodes UTF-8 `String` values.
 - `RawDataBodyCodec` encodes and decodes raw `Data` values.
 - Successful typed responses preserve the final response `URL?` on `Client.Response`, but typed decoding consumes the response body and does not preserve raw response bytes afterward.
-- Browser response-body promise rejections surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata for streamed byte reads and derived text reads.
+- Browser response-body promise rejections from streamed byte reads surface as `ClientError.responseBodyFailure`, preserving JavaScript error metadata with the `.bytes` operation.
 - Browser request or response-body cancellation throws `CancellationError`.
 - Browser request and response-body timeouts throw `ClientError.timedOut`.
 
@@ -85,12 +85,47 @@ Parcel exposes:
 - `BrowserTransport` does not retain temporary `JSClosure` bridges beyond synchronous JavaScript header iteration, using explicit release on JavaScriptKit no-weakrefs builds.
 - `ClientError.unsupportedPlatform` remains reserved for `wasm32` builds where Parcel can compile but no browser-capable JavaScript runtime is available.
 
-## Validation Model
+## Validation
 
-- Host builds validate that Parcel compiles natively with `PARCEL_INCLUDE_WASM_TESTS=0 xcrun swift build --scratch-path .build-xcode-build`.
-- Swift formatting runs through `swift-format format ... --recursive --parallel -i`.
+Parcel follows the same broad validation split as JavaScriptKit:
+
+- A host build lane verifies that Parcel compiles natively without Wasm-only browser tests.
+- Swift formatting is part of validation and runs through the repository formatter script.
+- Wasm/JS tests are the primary runtime validation lane for `BrowserTransport`.
 - Host-side tests validate core `Client` behavior using injected mock transports.
-- Wasm/JS tests validate `BrowserTransport` behavior through `swift package --swift-sdk ... js test`.
-- Wasm tests run in Node with a repository prelude that provides a deterministic `fetch` shim for browser-oriented transport tests.
 - The Wasm-only browser test target is only included when the Wasm validation script opts into it, so host `swift test` runs stay native-only.
 - Full test validation runs the Wasm lane first, then the host lane.
+- The host build and host test lanes set `PARCEL_INCLUDE_WASM_TESTS=0`.
+- The Wasm lane sets `PARCEL_INCLUDE_WASM_TESTS=1` and uses `swift package --swift-sdk ... js test`.
+- Wasm tests run in Node with the repository prelude in [`Tests/prelude.mjs`](Tests/prelude.mjs), which provides a deterministic `fetch` shim for browser-oriented transport tests.
+- By default, the Wasm lane expects the `swift-6.2.4-RELEASE_wasm` SDK; override that with `PARCEL_SWIFT_SDK` when needed.
+
+Run the host build lane with:
+
+```sh
+./skills/swift-build/scripts/run-swift-build.sh
+```
+
+Run the formatter with:
+
+```sh
+./skills/swift-format/scripts/run-swift-format.sh
+```
+
+Run the full test flow with:
+
+```sh
+./skills/swift-test/scripts/run-swift-tests.sh
+```
+
+Run only the Wasm test lane with:
+
+```sh
+./skills/swift-test/scripts/run-wasm-tests.sh
+```
+
+Run only the host test lane with:
+
+```sh
+./skills/swift-test/scripts/run-host-tests.sh
+```
