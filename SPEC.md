@@ -90,42 +90,75 @@ Parcel exposes:
 Parcel follows the same broad validation split as JavaScriptKit:
 
 - A host build lane verifies that Parcel compiles natively without Wasm-only browser tests.
-- Swift formatting is part of validation and runs through the repository formatter script.
+- Swift formatting is part of validation and runs through the global Codex `swift-format`
+  skill.
 - Wasm/JS tests are the primary runtime validation lane for `BrowserTransport`.
 - Host-side tests validate core `Client` behavior using injected mock transports.
-- The Wasm-only browser test target is only included when the Wasm validation script opts into it, so host `swift test` runs stay native-only.
+- The Wasm-only browser test target is only included when the Wasm validation lane opts into
+  it, so host `swift test` runs stay native-only.
 - Full test validation runs the Wasm lane first, then the host lane.
 - The host build and host test lanes set `PARCEL_INCLUDE_WASM_TESTS=0`.
 - The Wasm lane sets `PARCEL_INCLUDE_WASM_TESTS=1` and uses `swift package --swift-sdk ... js test`.
 - Wasm tests run in Node with the repository prelude in [`Tests/prelude.mjs`](Tests/prelude.mjs), which provides a deterministic `fetch` shim for browser-oriented transport tests.
-- By default, the Wasm lane expects the `swift-6.2.4-RELEASE_wasm` SDK; override that with `PARCEL_SWIFT_SDK` when needed.
+- Wasm test packaging points JavaScriptKit's PackageToJS template at
+  [`Vendor/browser_wasi_shim`](Vendor/browser_wasi_shim) so validation does not depend on
+  `registry.npmjs.org` being reachable for `@bjorn3/browser_wasi_shim`.
+- Parcel targets Swift 6.3.0 for host builds and SwiftPM uses `swift-tools-version: 6.3`.
+- Parcel depends on JavaScriptKit `0.50.2` or newer for Swift 6.3-compatible
+  JavaScript event-loop executor support.
+- By default, the Wasm lane expects the `swift-6.3-RELEASE_wasm` SDK; override that with `PARCEL_SWIFT_SDK` when needed.
 
-Run the host build lane with:
+Codex agents should use globally installed Codex skills rather than repo-local `./skills`
+scripts:
+
+- Run the host build lane with the global Codex `swift-build` skill when it is
+  available. Outside Codex, or when that skill is unavailable, run:
 
 ```sh
-./skills/swift-build/scripts/run-swift-build.sh
+PARCEL_INCLUDE_WASM_TESTS=0 swift build --scratch-path .build-xcode-build
 ```
 
-Run the formatter with:
+- Run the formatter with the global Codex `swift-format` skill. Outside Codex, run:
 
 ```sh
-./skills/swift-format/scripts/run-swift-format.sh
+swift-format format . --recursive --parallel -i
 ```
 
-Run the full test flow with:
+- Run the full test flow by running the Wasm lane first and then the host lane.
 
 ```sh
-./skills/swift-test/scripts/run-swift-tests.sh
+# Run the Wasm lane below first, then:
+PARCEL_INCLUDE_WASM_TESTS=0 swift test --parallel --scratch-path .build-xcode-tests
 ```
 
-Run only the Wasm test lane with:
+- Run only the Wasm test lane with:
 
 ```sh
-./skills/swift-test/scripts/run-wasm-tests.sh
+export PARCEL_INCLUDE_WASM_TESTS=1
+
+swift package --scratch-path .build resolve
+
+template_path=".build/checkouts/JavaScriptKit/Plugins/PackageToJS/Templates/package.json"
+browser_wasi_shim_path="${PARCEL_BROWSER_WASI_SHIM_PATH:-$PWD/Vendor/browser_wasi_shim}"
+PACKAGE_TO_JS_TEMPLATE_PATH="$template_path" \
+BROWSER_WASI_SHIM_PATH="$browser_wasi_shim_path" \
+ruby -rjson -e '
+  path = ENV.fetch("PACKAGE_TO_JS_TEMPLATE_PATH")
+  package = JSON.parse(File.read(path))
+  package.fetch("dependencies")["@bjorn3/browser_wasi_shim"] = "file:#{ENV.fetch("BROWSER_WASI_SHIM_PATH")}"
+  File.write(path, JSON.pretty_generate(package) + "\n")
+'
+
+rm -rf \
+  .build/plugins/PackageToJS/outputs/PackageTests \
+  .build/plugins/PackageToJS/outputs/PackageTests.tmp
+
+PARCEL_INCLUDE_WASM_TESTS=1 swift package --scratch-path .build --swift-sdk "${PARCEL_SWIFT_SDK:-swift-6.3-RELEASE_wasm}" js test --default-platform node --prelude ./Tests/prelude.mjs -Xnode --expose-gc
 ```
 
-Run only the host test lane with:
+- Run only the host test lane with the global Codex `swift-test` skill after setting
+  `PARCEL_INCLUDE_WASM_TESTS=0`. Outside Codex, run:
 
 ```sh
-./skills/swift-test/scripts/run-host-tests.sh
+PARCEL_INCLUDE_WASM_TESTS=0 swift test --parallel --scratch-path .build-xcode-tests
 ```
