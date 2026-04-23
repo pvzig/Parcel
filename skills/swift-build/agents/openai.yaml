@@ -1,4 +1,0 @@
-interface:
-  display_name: "Swift Build"
-  short_description: "Build the host Swift package"
-  default_prompt: "Build this Swift package"
