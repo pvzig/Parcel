@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// A `BodyCodec` that encodes and decodes UTF-8 plain-text `String` values.
 public struct PlainTextBodyCodec: BodyCodec, Sendable {

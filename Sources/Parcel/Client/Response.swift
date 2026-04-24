@@ -1,5 +1,10 @@
-import Foundation
 import HTTPTypes
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 extension Client {
   /// A successfully decoded response value plus the response metadata Parcel preserved.

@@ -1,5 +1,10 @@
-import Foundation
 import HTTPTypes
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 extension Client {
   /// A typed request description that Parcel encodes using a `Codec` when sent.

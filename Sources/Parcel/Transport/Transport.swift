@@ -1,4 +1,3 @@
-import Foundation
 import HTTPTypes
 
 public protocol Transport: Sendable {

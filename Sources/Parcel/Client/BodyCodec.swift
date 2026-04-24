@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Encodes and decodes typed request and response bodies for `Client`.
 public protocol BodyCodec: Sendable {

@@ -104,6 +104,8 @@ Parcel follows the same broad validation split as JavaScriptKit:
   [`Vendor/browser_wasi_shim`](Vendor/browser_wasi_shim) so validation does not depend on
   `registry.npmjs.org` being reachable for `@bjorn3/browser_wasi_shim`.
 - Parcel targets Swift 6.3.0 for host builds and SwiftPM uses `swift-tools-version: 6.3`.
+- Parcel requires macOS 15 or newer for host builds so the shared body iteration
+  guard can use Swift's `Synchronization.Mutex` instead of Foundation locking.
 - Parcel depends on JavaScriptKit `0.50.2` or newer for Swift 6.3-compatible
   JavaScript event-loop executor support.
 - By default, the Wasm lane expects the `swift-6.3-RELEASE_wasm` SDK; override that with `PARCEL_SWIFT_SDK` when needed.

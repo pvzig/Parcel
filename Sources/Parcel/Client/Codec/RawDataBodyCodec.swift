@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// A `BodyCodec` that passes typed `Data` request and response bodies through unchanged.
 public struct RawDataBodyCodec: BodyCodec, Sendable {

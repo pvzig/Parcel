@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// A `BodyCodec` that encodes and decodes request bodies as JSON.
 public struct JSONBodyCodec: BodyCodec, Sendable {

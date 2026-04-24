@@ -1,4 +1,3 @@
-import Foundation
 import HTTPTypes
 
 /// Sends typed Parcel requests through a `Transport` and decodes successful responses using the

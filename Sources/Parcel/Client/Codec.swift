@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 extension Client {
   /// Describes how Parcel encodes typed request bodies and decodes typed responses.

@@ -50,7 +50,7 @@ if includeWasmBrowserTests {
 let package = Package(
   name: "Parcel",
   platforms: [
-    .macOS(.v13)
+    .macOS(.v15)
   ],
   products: [
     .library(

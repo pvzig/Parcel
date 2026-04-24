@@ -1,5 +1,11 @@
-import Foundation
 import HTTPTypes
+import Synchronization
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)
   import JavaScriptEventLoop
@@ -12,7 +18,7 @@ import HTTPTypes
     }
 
     private final class ResponseBodyReader: @unchecked Sendable {
-      private enum State {
+      private enum State: Sendable {
         case open
         case finished
         case cancelled
@@ -20,8 +26,7 @@ import HTTPTypes
 
       private let readerObject: JSObject
       private let abortState: AbortState
-      private let lock = NSLock()
-      private var state: State = .open
+      private let state = Mutex(State.open)
 
       init(
         readerObject: JSObject,
@@ -66,31 +71,25 @@ import HTTPTypes
       }
 
       func finish() {
-        lock.lock()
-        defer {
-          lock.unlock()
-        }
+        state.withLock { state in
+          guard state == .open else {
+            return
+          }
 
-        guard state == .open else {
-          return
+          _ = readerObject["releaseLock"]?()
+          state = .finished
         }
-
-        _ = readerObject["releaseLock"]?()
-        state = .finished
       }
 
       private func cancelIfNeeded() {
-        lock.lock()
-        defer {
-          lock.unlock()
-        }
+        state.withLock { state in
+          guard state == .open else {
+            return
+          }
 
-        guard state == .open else {
-          return
+          _ = readerObject["cancel"]?()
+          state = .cancelled
         }
-
-        _ = readerObject["cancel"]?()
-        state = .cancelled
       }
     }
 

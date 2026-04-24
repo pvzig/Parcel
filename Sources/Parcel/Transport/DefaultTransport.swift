@@ -1,4 +1,3 @@
-import Foundation
 import HTTPTypes
 
 #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)

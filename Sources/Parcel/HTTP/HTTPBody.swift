@@ -1,4 +1,10 @@
-import Foundation
+import Synchronization
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 public final class HTTPBody: @unchecked Sendable, AsyncSequence {
   public typealias ByteChunk = ArraySlice<UInt8>
@@ -47,8 +53,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
   public let iterationBehavior: IterationBehavior
 
   private let sequence: AnyAsyncSequence
-  private let lock = NSLock()
-  private var iteratorCreated = false
+  private let iteratorCreated = Mutex(false)
 
   public init() {
     self.sequence = .init(EmptyAsyncSequence<ByteChunk>())
@@ -191,18 +196,16 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
   }
 
   private func markIteratorCreated() throws {
-    lock.lock()
-    defer {
+    try iteratorCreated.withLock { iteratorCreated in
+      guard iterationBehavior == .single else {
+        return
+      }
+
+      if iteratorCreated {
+        throw TooManyIterationsError()
+      }
+
       iteratorCreated = true
-      lock.unlock()
-    }
-
-    guard iterationBehavior == .single else {
-      return
-    }
-
-    if iteratorCreated {
-      throw TooManyIterationsError()
     }
   }
 }
