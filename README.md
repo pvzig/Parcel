@@ -44,11 +44,12 @@ let response = try await client.send(
 ```
 
 ### Custom Encoders
+
 If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default codec through `ClientConfiguration`:
+
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
-        defaultTimeout: .seconds(30),
         defaultCodec: .json(
             codec: JSONBodyCodec(
                 makeDecoder: {
@@ -57,7 +58,8 @@ let client = Client(
                     return decoder
                 }
             )
-        )
+        ),
+        defaultTimeout: .seconds(30)
     )
 )
 ```
@@ -68,7 +70,7 @@ The encoder and decoder factories run for each encode or decode operation. This 
 
 Parcel includes additional built-in codecs for common wire formats: `.formURLEncoded()`, `.plainText()`, `.rawData()`.
 
-If you need a different typed wire format entirely, provide a custom `BodyCodec`. Declare the codec's media types on the codec itself so every way of constructing a `Client.Codec` from it sends the right `Content-Type` and `Accept` headers:
+If you need a different typed wire format entirely, provide a custom `BodyCodec`. Declare the codec's media types on the codec itself so `Client.Codec(bodyCodec:)` adopts the right default `Content-Type` and `Accept` headers. Use the exact media-type initializers when you need to override or suppress those defaults:
 
 ```swift
 enum CustomCodecError: Error {
@@ -97,7 +99,7 @@ let client = Client(
 
 ## Runtime
 
-Parcel is browser-oriented. `Client()` is only compiled on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, `Client()` constructs a `BrowserTransport`; requests made in an unsupported JavaScript runtime fail with `ClientError.unsupportedPlatform`.
+Parcel is browser-oriented. `Client()` is only available on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, `Client()` constructs a `BrowserTransport`; requests made in an unsupported JavaScript runtime fail with `ClientError.unsupportedPlatform`.
 
 `BrowserTransport` is likewise only available on those `wasm32` builds. It installs the JavaScriptKit executor when it initializes in a supported runtime.
 
