@@ -2,7 +2,7 @@
   import Foundation
   import HTTPTypes
   import JavaScriptEventLoop
-  @preconcurrency import JavaScriptKit
+  import JavaScriptKit
 
   @testable import Parcel
 

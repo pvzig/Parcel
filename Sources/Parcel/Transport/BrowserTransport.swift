@@ -9,7 +9,7 @@ import Synchronization
 
 #if arch(wasm32) && canImport(JavaScriptEventLoop) && canImport(JavaScriptKit)
   import JavaScriptEventLoop
-  @preconcurrency import JavaScriptKit
+  import JavaScriptKit
 
   public struct BrowserTransport: Transport {
     private enum BufferedRequestBodyOutcome: Sendable {
@@ -126,7 +126,7 @@ import Synchronization
             throw ClientError.invalidResponseBody
           }
 
-          return JSTypedArray<UInt8>(unsafelyWrapping: valueObject)
+          return JSUint8Array(unsafelyWrapping: valueObject)
             .withUnsafeBytes { ArraySlice($0) }
         } catch is CancellationError {
           await abortState.abort()
@@ -296,7 +296,7 @@ import Synchronization
         }
 
         if let body {
-          options["body"] = JSTypedArray<UInt8>(body).jsValue
+          options["body"] = JSUint8Array(body).jsValue
         }
 
         guard let requestURL = request.url else {
