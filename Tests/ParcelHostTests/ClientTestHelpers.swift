@@ -56,9 +56,12 @@
     }
   }
 
-  func decodeFormFields(_ data: Data) -> [String: [String]] {
+  /// Parses form bodies independently from the production codec for wire-format assertions.
+  func decodeFormFields(_ data: Data) throws -> [String: [String]] {
     guard let body = String(data: data, encoding: .utf8) else {
-      preconditionFailure("Expected UTF-8 form body")
+      throw DecodingError.dataCorrupted(
+        .init(codingPath: [], debugDescription: "Expected a UTF-8 form body.")
+      )
     }
 
     guard body.isEmpty == false else {
@@ -66,63 +69,23 @@
     }
 
     var values: [String: [String]] = [:]
-
     for pair in body.split(separator: "&", omittingEmptySubsequences: false) {
       let segments = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-      let name = decodeFormComponent(String(segments[0]))
-      let value = decodeFormComponent(segments.count == 2 ? String(segments[1]) : "")
+      let name = try decodeFormComponent(String(segments[0]))
+      let value = try decodeFormComponent(segments.count == 2 ? String(segments[1]) : "")
       values[name, default: []].append(value)
     }
-
     return values
   }
 
-  private func decodeFormComponent(_ component: String) -> String {
-    let bytes = Array(component.utf8)
-    var decodedBytes: [UInt8] = []
-    decodedBytes.reserveCapacity(bytes.count)
-
-    var index = 0
-    while index < bytes.count {
-      switch bytes[index] {
-      case 0x2B:
-        decodedBytes.append(0x20)
-        index += 1
-      case 0x25:
-        guard
-          index + 2 < bytes.count,
-          let upper = decodeHexDigit(bytes[index + 1]),
-          let lower = decodeHexDigit(bytes[index + 2])
-        else {
-          preconditionFailure("Invalid percent-encoded form component")
-        }
-
-        decodedBytes.append((upper << 4) | lower)
-        index += 3
-      default:
-        decodedBytes.append(bytes[index])
-        index += 1
-      }
+  private func decodeFormComponent(_ component: String) throws -> String {
+    let percentEncoded = component.replacing("+", with: "%20")
+    guard let decoded = percentEncoded.removingPercentEncoding else {
+      throw DecodingError.dataCorrupted(
+        .init(codingPath: [], debugDescription: "Invalid percent-encoded form component.")
+      )
     }
-
-    guard let decoded = String(bytes: decodedBytes, encoding: .utf8) else {
-      preconditionFailure("Decoded form component was not valid UTF-8")
-    }
-
     return decoded
-  }
-
-  private func decodeHexDigit(_ byte: UInt8) -> UInt8? {
-    switch byte {
-    case 0x30...0x39:
-      byte - 48
-    case 0x41...0x46:
-      byte - 55
-    case 0x61...0x66:
-      byte - 87
-    default:
-      nil
-    }
   }
 
   func fixtureResponse(

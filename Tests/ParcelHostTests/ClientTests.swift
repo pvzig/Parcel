@@ -128,7 +128,7 @@
 
     let body = try codec.encode(payload)
     let decoded = try codec.decode(TokenExchangePayload.self, from: body)
-    let fields = decodeFormFields(body)
+    let fields = try decodeFormFields(body)
 
     #expect(fields["grant_type"] == ["client_credentials"])
     #expect(fields["scope"] == ["read write"])
@@ -165,7 +165,7 @@
 
     let request = await transport.lastRequest
     let body = try #require(await transport.lastBody)
-    let fields = decodeFormFields(body)
+    let fields = try decodeFormFields(body)
 
     #expect(accepted.value == payload)
     #expect(request?.headerFields[.accept] == "application/x-www-form-urlencoded")
@@ -203,7 +203,7 @@
     #expect(request?.headerFields[.contentType] == "application/octet-stream")
   }
 
-  @Test func defaultAndAdditionalHeadersAreBothPreserved() async throws {
+  @Test func perRequestHeadersOverrideSameNamedDefaultHeaders() async throws {
     let transport = RecordingTransport(
       response: fixtureResponse(
         statusCode: 200,
@@ -212,13 +212,40 @@
     )
     let client = Client(
       configuration: ClientConfiguration(
-        defaultHeaders: [HTTPField.Name("accept")!: "application/vnd.parcel+json"]
+        defaultHeaders: [
+          HTTPField.Name("accept")!: "application/vnd.parcel+json",
+          .xClient: "Parcel",
+        ]
       ),
       transport: transport
     )
 
     let _ = try await client.send(
       .get(exampleStatusURL, headers: [.accept: "application/json"]),
+      as: GenerateAccepted.self
+    )
+
+    let request = await transport.lastRequest
+
+    #expect(request?.headerFields[values: .accept] == ["application/json"])
+    #expect(request?.headerFields[.xClient] == "Parcel")
+  }
+
+  @Test func repeatedPerRequestHeaderValuesArePreserved() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(
+        statusCode: 200,
+        body: try JSONEncoder().encode(GenerateAccepted(statusURL: exampleStatusURL))
+      )
+    )
+    let client = Client(transport: transport)
+
+    var headers = HTTPFields()
+    headers.append(.init(name: .accept, value: "application/vnd.parcel+json"))
+    headers.append(.init(name: .accept, value: "application/json"))
+
+    let _ = try await client.send(
+      .get(exampleStatusURL, headers: headers),
       as: GenerateAccepted.self
     )
 
@@ -265,6 +292,21 @@
     let _ = try await client.send(
       .get(exampleStatusURL),
       as: GenerateAccepted.self
+    )
+
+    #expect(await transport.lastTimeout == .seconds(90))
+  }
+
+  @Test func nilPerCallTimeoutUsesTheConfiguredDefault() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
+    let client = Client(
+      configuration: ClientConfiguration(defaultTimeout: .seconds(90)),
+      transport: transport
+    )
+
+    _ = try await client.raw(
+      HTTPRequest(method: .head, url: exampleStatusURL),
+      timeout: nil
     )
 
     #expect(await transport.lastTimeout == .seconds(90))
@@ -387,6 +429,172 @@
     } catch let error as ClientError {
       #expect(error == .unsuccessfulStatusCode(503, body: "unavailable"))
     }
+  }
+
+  @Test func unsuccessfulStatusPreservesErrorBodyTimeouts() async throws {
+    let stream = AsyncThrowingStream<HTTPBody.ByteChunk, any Error> { continuation in
+      continuation.finish(throwing: ClientError.timedOut)
+    }
+    let transport = RecordingTransport(
+      response: TransportResponse(
+        response: HTTPResponse(status: .init(code: 503)),
+        body: HTTPBody(stream, length: .unknown),
+        url: exampleStatusURL
+      )
+    )
+    let client = Client(transport: transport)
+
+    await #expect(throws: ClientError.timedOut) {
+      let _: Client.Response<GenerateAccepted> = try await client.send(
+        .get(exampleStatusURL),
+        as: GenerateAccepted.self
+      )
+    }
+  }
+
+  @Test func unsuccessfulStatusPreservesErrorBodyCancellation() async throws {
+    let stream = AsyncThrowingStream<HTTPBody.ByteChunk, any Error> { continuation in
+      continuation.finish(throwing: CancellationError())
+    }
+    let transport = RecordingTransport(
+      response: TransportResponse(
+        response: HTTPResponse(status: .init(code: 503)),
+        body: HTTPBody(stream, length: .unknown),
+        url: exampleStatusURL
+      )
+    )
+    let client = Client(transport: transport)
+
+    await #expect(throws: CancellationError.self) {
+      let _: Client.Response<GenerateAccepted> = try await client.send(
+        .get(exampleStatusURL),
+        as: GenerateAccepted.self
+      )
+    }
+  }
+
+  @Test func relativeURLsThrowInvalidRequestURLInsteadOfTrapping() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 200))
+    let client = Client(transport: transport)
+
+    do {
+      let _ = try await client.send(
+        .get(fixtureURL("/api/items")),
+        as: EmptyResponse.self
+      )
+      Issue.record("Expected request to throw")
+    } catch let error as ClientError {
+      #expect(error == .invalidRequestURL("/api/items"))
+    }
+
+    #expect(await transport.lastRequest == nil)
+  }
+
+  @Test func hostlessURLsThrowInvalidRequestURLInsteadOfFailingLate() async throws {
+    // These have a scheme, so they survive `HTTPRequest`'s schemeless precondition, but they
+    // have no authority, which leaves `HTTPRequest.url` nil for the transport.
+    for urlString in ["mailto:someone@example.com", "file:///tmp/example", "https:///path"] {
+      let transport = RecordingTransport(response: fixtureResponse(statusCode: 200))
+      let client = Client(transport: transport)
+
+      do {
+        let _ = try await client.send(
+          .get(fixtureURL(urlString)),
+          as: EmptyResponse.self
+        )
+        Issue.record("Expected \(urlString) to throw")
+      } catch let error as ClientError {
+        #expect(error == .invalidRequestURL(urlString))
+      }
+
+      #expect(await transport.lastRequest == nil)
+    }
+  }
+
+  @Test func typedGetRequestsRejectBodies() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 200))
+    let client = Client(transport: transport)
+
+    do {
+      let _ = try await client.send(
+        Client.Request(
+          method: .get,
+          url: exampleStatusURL,
+          body: GenerateRequest(pagePath: "/posts/example")
+        ),
+        as: EmptyResponse.self
+      )
+      Issue.record("Expected request to throw")
+    } catch let error as ClientError {
+      #expect(error == .requestBodyNotAllowed(.get))
+    }
+
+    #expect(await transport.lastRequest == nil)
+  }
+
+  @Test func rawHeadRequestsRejectBodies() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 200))
+    let client = Client(transport: transport)
+
+    do {
+      _ = try await client.raw(
+        HTTPRequest(method: .head, url: exampleStatusURL),
+        body: HTTPBody("payload")
+      )
+      Issue.record("Expected request to throw")
+    } catch let error as ClientError {
+      #expect(error == .requestBodyNotAllowed(.head))
+    }
+
+    #expect(await transport.lastRequest == nil)
+  }
+
+  @Test func oversizedErrorBodiesStillReportTheStatusCode() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(statusCode: 503, body: Data("unavailable".utf8))
+    )
+    let client = Client(
+      configuration: ClientConfiguration(maximumBufferedBodyBytes: 4),
+      transport: transport
+    )
+
+    do {
+      let _ = try await client.send(
+        .get(exampleStatusURL),
+        as: GenerateAccepted.self
+      )
+      Issue.record("Expected request to throw")
+    } catch let error as ClientError {
+      #expect(error == .unsuccessfulStatusCode(503, body: nil))
+    }
+  }
+
+  @Test func emptySuccessfulBodiesDecodeThroughRawDataCodec() async throws {
+    let transport = RecordingTransport(
+      response: fixtureResponse(statusCode: 200, body: Data())
+    )
+    let client = Client(transport: transport)
+
+    let response = try await client.send(
+      .get(exampleStatusURL),
+      as: Data.self,
+      codec: .rawData()
+    )
+
+    #expect(response.value == Data())
+  }
+
+  @Test func missingSuccessfulBodiesDecodeThroughPlainTextCodec() async throws {
+    let transport = RecordingTransport(response: fixtureResponse(statusCode: 204))
+    let client = Client(transport: transport)
+
+    let response = try await client.send(
+      .get(exampleStatusURL),
+      as: String.self,
+      codec: .plainText()
+    )
+
+    #expect(response.value == "")
   }
 
   @Test func clientDecodeHonorsMaximumBufferedBodyBytes() async throws {

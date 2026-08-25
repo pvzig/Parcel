@@ -6,22 +6,42 @@ import Synchronization
   import Foundation
 #endif
 
-public final class HTTPBody: @unchecked Sendable, AsyncSequence {
+/// An async stream of body bytes for a request or a response.
+///
+/// A body is either buffered — created from `Data`, a `String`, or a byte collection, and safe to
+/// iterate repeatedly — or streamed, created from an `AsyncSequence` such as a browser
+/// `ReadableStream`. Streamed bodies are usually `.single`: iterating one a second time throws
+/// `TooManyIterationsError`, so `collect(upTo:)` and `text(upTo:)` can only be called once.
+///
+/// `Client.send` collects the response body itself, so most callers meet `HTTPBody` only through
+/// `Client.raw`.
+public final class HTTPBody: Sendable, AsyncSequence {
+  /// A single chunk of body bytes, as yielded by iteration.
   public typealias ByteChunk = ArraySlice<UInt8>
   public typealias Element = ByteChunk
+
+  /// The 2 MiB cap `collect(upTo:)` and `text(upTo:)` apply when the caller does not pass one.
   public static let defaultMaximumCollectedBytes = 2 * 1024 * 1024
 
+  /// How many times a body's bytes can be iterated.
   public enum IterationBehavior: Sendable {
+    /// The bytes can be consumed only once; a second iterator throws `TooManyIterationsError`.
     case single
+    /// The bytes are buffered and can be iterated any number of times.
     case multiple
   }
 
+  /// The number of bytes a body will yield, when that is known up front.
   public enum Length: Sendable, Equatable {
+    /// The length is not known, typically because the transfer is chunked or content-encoded.
     case unknown
+    /// The body will yield exactly this many bytes.
     case known(Int64)
   }
 
+  /// Thrown when a body carries more bytes than the caller's limit allows.
   public struct TooManyBytesError: Error, Equatable, Sendable {
+    /// The limit that was exceeded.
     public let maxBytes: Int
 
     public init(maxBytes: Int) {
@@ -29,10 +49,12 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     }
   }
 
+  /// Thrown when a `.single` body is iterated more than once.
   public struct TooManyIterationsError: Error, Equatable, Sendable {
     public init() {}
   }
 
+  /// An iterator over a body's byte chunks.
   public struct AsyncIterator: AsyncIteratorProtocol {
     private var iterator: AnyAsyncIterator
 
@@ -49,18 +71,23 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     }
   }
 
+  /// The number of bytes this body will yield, if known.
   public let length: Length
+
+  /// Whether this body's bytes can be iterated more than once.
   public let iterationBehavior: IterationBehavior
 
   private let sequence: AnyAsyncSequence
   private let iteratorCreated = Mutex(false)
 
+  /// Creates an empty body of known zero length.
   public init() {
-    self.sequence = .init(EmptyAsyncSequence<ByteChunk>())
+    self.sequence = .init(WrappedSyncSequence<[ByteChunk]>(sequence: []))
     self.length = .known(0)
     self.iterationBehavior = .multiple
   }
 
+  /// Creates a buffered body from `data`.
   public convenience init(_ data: Data) {
     self.init(
       ArraySlice(data),
@@ -69,10 +96,12 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a buffered body from the UTF-8 bytes of `string`.
   public convenience init(_ string: some StringProtocol & Sendable) {
     self.init(Data(string.utf8))
   }
 
+  /// Creates a body from a byte collection with an explicit length and iteration behavior.
   public convenience init(
     _ bytes: some Collection<UInt8> & Sendable,
     length: Length,
@@ -85,6 +114,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a buffered body from a byte collection, inferring its length.
   public convenience init(
     _ bytes: some Collection<UInt8> & Sendable
   ) {
@@ -95,6 +125,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a single-iteration body that streams chunks from `stream`.
   public convenience init(
     _ stream: AsyncThrowingStream<ByteChunk, any Error>,
     length: Length
@@ -106,6 +137,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a single-iteration body that streams chunks from `stream`.
   public convenience init(
     _ stream: AsyncStream<ByteChunk>,
     length: Length
@@ -117,6 +149,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a body backed by an async sequence of byte chunks.
   public convenience init<Bytes: AsyncSequence>(
     _ sequence: Bytes,
     length: Length,
@@ -129,6 +162,7 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     )
   }
 
+  /// Creates a body backed by an async sequence of byte sequences, mapping each to a chunk.
   public convenience init<Bytes: AsyncSequence>(
     _ sequence: Bytes,
     length: Length,
@@ -153,6 +187,10 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     self.iterationBehavior = iterationBehavior
   }
 
+  /// Returns an iterator over the body's byte chunks.
+  ///
+  /// A `.single` body returns an iterator that throws `TooManyIterationsError` from its first
+  /// `next()` call if the body has already been iterated.
   public func makeAsyncIterator() -> AsyncIterator {
     do {
       try markIteratorCreated()
@@ -162,9 +200,17 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
     }
   }
 
+  /// Buffers the whole body in memory.
+  ///
+  /// - Parameter maxBytes: The most bytes to buffer. Pass `.max` only for bodies whose size you
+  ///   control; the default guards against a server streaming an unbounded response.
+  /// - Throws: `TooManyBytesError` if the body exceeds `maxBytes`, `TooManyIterationsError` if a
+  ///   `.single` body was already consumed, or `CancellationError` if the task is cancelled.
   public func collect(
     upTo maxBytes: Int = HTTPBody.defaultMaximumCollectedBytes
   ) async throws -> Data {
+    try Task.checkCancellation()
+
     if case .known(let knownBytes) = length,
       knownBytes > maxBytes
     {
@@ -178,17 +224,28 @@ public final class HTTPBody: @unchecked Sendable, AsyncSequence {
       data.reserveCapacity(capacity)
     }
 
+    var chunksUntilYield = 64
     for try await chunk in self {
+      try Task.checkCancellation()
       let (newCount, overflow) = data.count.addingReportingOverflow(chunk.count)
       guard overflow == false, newCount <= maxBytes else {
         throw TooManyBytesError(maxBytes: maxBytes)
       }
       data.append(contentsOf: chunk)
+
+      chunksUntilYield -= 1
+      if chunksUntilYield == 0 {
+        await Task.yield()
+        chunksUntilYield = 64
+      }
     }
 
     return data
   }
 
+  /// Buffers the whole body and decodes it as UTF-8, replacing any ill-formed bytes.
+  ///
+  /// - Parameter maxBytes: The most bytes to buffer, as in `collect(upTo:)`.
   public func text(
     upTo maxBytes: Int = HTTPBody.defaultMaximumCollectedBytes
   ) async throws -> String {
@@ -270,18 +327,6 @@ where Sequence.Element: Sendable {
 
   func makeAsyncIterator() -> AsyncIterator {
     .init(iterator: sequence.makeIterator())
-  }
-}
-
-private struct EmptyAsyncSequence<Element: Sendable>: AsyncSequence, Sendable {
-  struct AsyncIterator: AsyncIteratorProtocol {
-    mutating func next() async throws -> Element? {
-      nil
-    }
-  }
-
-  func makeAsyncIterator() -> AsyncIterator {
-    .init()
   }
 }
 

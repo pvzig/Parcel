@@ -1,11 +1,13 @@
 #if arch(wasm32)
   import Foundation
   import HTTPTypes
+  import JavaScriptEventLoop
   @preconcurrency import JavaScriptKit
 
   @testable import Parcel
 
   extension HTTPField.Name {
+    static let xBinary = Self("X-Binary")!
     static let xTrace = Self("X-Trace")!
   }
 
@@ -38,19 +40,78 @@
     let mode: String?
     let credentials: String?
     let cache: String?
+    let redirect: String?
     let aborted: Bool
+    let bodyReadStarted: Bool
     let bodyCancelled: Bool
+    let readerReleased: Bool
+  }
+
+  actor BrowserTestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+      guard isOpen == false else {
+        return
+      }
+
+      await withCheckedContinuation { continuation in
+        waiters.append(continuation)
+      }
+    }
+
+    func open() {
+      isOpen = true
+      let waiters = waiters
+      self.waiters.removeAll()
+      for waiter in waiters {
+        waiter.resume()
+      }
+    }
+  }
+
+  struct NoncooperativeGatedBodySequence: AsyncSequence, Sendable {
+    typealias Element = [UInt8]
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+      let gate: BrowserTestGate
+      var emitted = false
+
+      mutating func next() async -> [UInt8]? {
+        guard emitted == false else {
+          return nil
+        }
+
+        await gate.wait()
+        emitted = true
+        return [0x61]
+      }
+    }
+
+    let gate: BrowserTestGate
+
+    func makeAsyncIterator() -> AsyncIterator {
+      .init(gate: gate)
+    }
   }
 
   /// Errors thrown when the JavaScript test harness is unavailable or malformed.
   enum BrowserTestHarnessError: Error {
     case missingHarness
     case missingFunction(String)
+    case invalidPromise(String)
     case invalidRecordedRequests
   }
 
   /// Bridge to the JavaScript prelude that configures mocked fetch responses.
   struct BrowserTestHarness {
+    enum RequestState: String, Sendable {
+      case bodyCancelled
+      case bodyReadStarted
+      case readerReleased
+    }
+
     enum RuntimeScope: String, Sendable {
       case window
       case worker
@@ -60,42 +121,36 @@
       let fetchDelayMilliseconds: Int?
       let fetchErrorName: String?
       let fetchErrorMessage: String?
-      let arrayBufferDelayMilliseconds: Int?
-      let arrayBufferErrorName: String?
-      let arrayBufferErrorMessage: String?
-      let jsonDelayMilliseconds: Int?
-      let jsonErrorName: String?
-      let jsonErrorMessage: String?
-      let textDelayMilliseconds: Int?
-      let textErrorName: String?
-      let textErrorMessage: String?
+      let bodyReadDelayMilliseconds: Int?
+      let bodyReadErrorName: String?
+      let bodyReadErrorMessage: String?
+      let cancelErrorName: String?
+      let cancelErrorMessage: String?
+      let omitResponseStatus: Bool?
+      let invalidBodyChunk: Bool?
 
       init(
         fetchDelayMilliseconds: Int? = nil,
         fetchErrorName: String? = nil,
         fetchErrorMessage: String? = nil,
-        arrayBufferDelayMilliseconds: Int? = nil,
-        arrayBufferErrorName: String? = nil,
-        arrayBufferErrorMessage: String? = nil,
-        jsonDelayMilliseconds: Int? = nil,
-        jsonErrorName: String? = nil,
-        jsonErrorMessage: String? = nil,
-        textDelayMilliseconds: Int? = nil,
-        textErrorName: String? = nil,
-        textErrorMessage: String? = nil
+        bodyReadDelayMilliseconds: Int? = nil,
+        bodyReadErrorName: String? = nil,
+        bodyReadErrorMessage: String? = nil,
+        cancelErrorName: String? = nil,
+        cancelErrorMessage: String? = nil,
+        omitResponseStatus: Bool? = nil,
+        invalidBodyChunk: Bool? = nil
       ) {
         self.fetchDelayMilliseconds = fetchDelayMilliseconds
         self.fetchErrorName = fetchErrorName
         self.fetchErrorMessage = fetchErrorMessage
-        self.arrayBufferDelayMilliseconds = arrayBufferDelayMilliseconds
-        self.arrayBufferErrorName = arrayBufferErrorName
-        self.arrayBufferErrorMessage = arrayBufferErrorMessage
-        self.jsonDelayMilliseconds = jsonDelayMilliseconds
-        self.jsonErrorName = jsonErrorName
-        self.jsonErrorMessage = jsonErrorMessage
-        self.textDelayMilliseconds = textDelayMilliseconds
-        self.textErrorName = textErrorName
-        self.textErrorMessage = textErrorMessage
+        self.bodyReadDelayMilliseconds = bodyReadDelayMilliseconds
+        self.bodyReadErrorName = bodyReadErrorName
+        self.bodyReadErrorMessage = bodyReadErrorMessage
+        self.cancelErrorName = cancelErrorName
+        self.cancelErrorMessage = cancelErrorMessage
+        self.omitResponseStatus = omitResponseStatus
+        self.invalidBodyChunk = invalidBodyChunk
       }
     }
 
@@ -127,6 +182,25 @@
       _ = configureRuntimeScope(scope.rawValue)
     }
 
+    func removeFetch() throws {
+      guard let removeFetch = api.removeFetch as ((any ConvertibleToJSValue...) -> JSValue)? else {
+        throw BrowserTestHarnessError.missingFunction("removeFetch")
+      }
+
+      _ = removeFetch()
+    }
+
+    func removeClearTimeout() throws {
+      guard
+        let removeClearTimeout =
+          api.removeClearTimeout as ((any ConvertibleToJSValue...) -> JSValue)?
+      else {
+        throw BrowserTestHarnessError.missingFunction("removeClearTimeout")
+      }
+
+      _ = removeClearTimeout()
+    }
+
     func configureResponse(
       statusCode: Int,
       headers: [String: String] = [:],
@@ -155,6 +229,28 @@
         jsonBody.map(JSValue.string) ?? JSValue.null,
         JSValue.string(behaviorJSON)
       )
+    }
+
+    func waitForRequestState(
+      _ state: RequestState,
+      requestIndex: Int = 0,
+      isolation: isolated (any Actor)? = #isolation
+    ) async throws {
+      guard
+        let waitForRequestState =
+          api.waitForRequestState as ((any ConvertibleToJSValue...) -> JSValue)?
+      else {
+        throw BrowserTestHarnessError.missingFunction("waitForRequestState")
+      }
+
+      guard
+        let promiseObject = waitForRequestState(requestIndex, state.rawValue).object,
+        let promise = JSPromise(promiseObject)
+      else {
+        throw BrowserTestHarnessError.invalidPromise("waitForRequestState")
+      }
+
+      _ = try await promise.value(isolation: isolation)
     }
 
     func recordedRequests() throws -> [RecordedBrowserRequest] {

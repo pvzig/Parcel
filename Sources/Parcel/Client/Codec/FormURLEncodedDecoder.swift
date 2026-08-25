@@ -4,6 +4,10 @@
   import Foundation
 #endif
 
+private protocol FormURLEncodedArray {}
+
+extension Array: FormURLEncodedArray {}
+
 struct FormURLEncodedDecoder: Decoder {
   var codingPath: [any CodingKey]
   let userInfo: [CodingUserInfoKey: Any]
@@ -11,19 +15,22 @@ struct FormURLEncodedDecoder: Decoder {
   private let values: [String: [String]]
   private let fieldName: String?
   private let elementValue: String?
+  private let missingFieldDecodesAsEmpty: Bool
 
   init(
     values: [String: [String]],
     codingPath: [any CodingKey] = [],
     userInfo: [CodingUserInfoKey: Any] = [:],
     fieldName: String? = nil,
-    elementValue: String? = nil
+    elementValue: String? = nil,
+    missingFieldDecodesAsEmpty: Bool = false
   ) {
     self.values = values
     self.codingPath = codingPath
     self.userInfo = userInfo
     self.fieldName = fieldName
     self.elementValue = elementValue
+    self.missingFieldDecodesAsEmpty = missingFieldDecodesAsEmpty
   }
 
   static func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
@@ -39,7 +46,7 @@ struct FormURLEncodedDecoder: Decoder {
         .init(
           codingPath: codingPath,
           debugDescription:
-            "FormURLEncodedBodyCodec does not support nested keyed containers."
+            FormURLEncodedShapeError.nestedKeyedContainer
         )
       )
     }
@@ -53,7 +60,7 @@ struct FormURLEncodedDecoder: Decoder {
         [String].self,
         .init(
           codingPath: codingPath,
-          debugDescription: "Form field arrays cannot contain nested arrays."
+          debugDescription: FormURLEncodedShapeError.nestedArray
         )
       )
     }
@@ -64,12 +71,16 @@ struct FormURLEncodedDecoder: Decoder {
         .init(
           codingPath: codingPath,
           debugDescription:
-            "FormURLEncodedBodyCodec only supports arrays nested under a keyed value."
+            FormURLEncodedShapeError.arrayUnderKeyOnly
         )
       )
     }
 
     guard let fieldValues = values[fieldName] else {
+      if missingFieldDecodesAsEmpty {
+        return UnkeyedContainer(decoder: self, values: [])
+      }
+
       throw DecodingError.valueNotFound(
         [String].self,
         .init(
@@ -93,7 +104,7 @@ struct FormURLEncodedDecoder: Decoder {
         .init(
           codingPath: codingPath,
           debugDescription:
-            "FormURLEncodedBodyCodec only supports top-level keyed values."
+            FormURLEncodedShapeError.topLevelKeyedOnly
         )
       )
     }
@@ -129,6 +140,19 @@ struct FormURLEncodedDecoder: Decoder {
     )
   }
 
+  /// A field decoder for a key with no form fields, used so empty arrays round-trip:
+  /// the encoder emits nothing for an empty array, so a missing array key decodes
+  /// through an empty unkeyed container.
+  fileprivate func missingFieldDecoder(for key: some CodingKey) -> Self {
+    Self(
+      values: values,
+      codingPath: codingPath + [key],
+      userInfo: userInfo,
+      fieldName: key.stringValue,
+      missingFieldDecodesAsEmpty: true
+    )
+  }
+
   fileprivate func keyNotFound(_ key: some CodingKey) -> DecodingError {
     DecodingError.keyNotFound(
       key,
@@ -155,7 +179,9 @@ struct FormURLEncodedDecoder: Decoder {
 
     var decodedValues: [String: [String]] = [:]
 
-    for pair in body.split(separator: "&", omittingEmptySubsequences: false) {
+    // The WHATWG urlencoded parser skips empty sequences, so a trailing or doubled `&` does not
+    // contribute a field named "".
+    for pair in body.split(separator: "&", omittingEmptySubsequences: true) {
       let segments = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
       let name = try decodeComponent(String(segments[0]))
       let value = try decodeComponent(segments.count == 2 ? String(segments[1]) : "")
@@ -296,11 +322,7 @@ extension FormURLEncodedDecoder {
     }
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-      guard contains(key) else {
-        throw decoder.keyNotFound(key)
-      }
-
-      return try T(from: decoder.childDecoder(for: key))
+      try decodeValue(type, forKey: key)
     }
 
     func nestedContainer<NestedKey: CodingKey>(
@@ -316,7 +338,7 @@ extension FormURLEncodedDecoder {
 
     func nestedUnkeyedContainer(forKey key: Key) throws -> any UnkeyedDecodingContainer {
       guard contains(key) else {
-        throw decoder.keyNotFound(key)
+        return try decoder.missingFieldDecoder(for: key).unkeyedContainer()
       }
 
       return try decoder.childDecoder(for: key).unkeyedContainer()
@@ -334,8 +356,18 @@ extension FormURLEncodedDecoder {
       return decoder.childDecoder(for: key)
     }
 
+    /// The single decode implementation, called directly by every `decode` overload so that none
+    /// of them depends on overload resolution to avoid recursing into itself.
     private func decodeValue<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-      try decode(type, forKey: key)
+      guard contains(key) else {
+        guard type is any FormURLEncodedArray.Type else {
+          throw decoder.keyNotFound(key)
+        }
+
+        return try T(from: decoder.missingFieldDecoder(for: key))
+      }
+
+      return try T(from: decoder.childDecoder(for: key))
     }
   }
 
@@ -418,7 +450,7 @@ extension FormURLEncodedDecoder {
     }
 
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
-      try T(from: try nextDecoder())
+      try decodeValue(type)
     }
 
     mutating func nestedContainer<NestedKey: CodingKey>(
@@ -435,8 +467,10 @@ extension FormURLEncodedDecoder {
       try nextDecoder()
     }
 
+    /// The single decode implementation, called directly by every `decode` overload so that none
+    /// of them depends on overload resolution to avoid recursing into itself.
     private mutating func decodeValue<T: Decodable>(_ type: T.Type) throws -> T {
-      try decode(type)
+      try T(from: nextDecoder())
     }
 
     private mutating func nextDecoder() throws -> FormURLEncodedDecoder {

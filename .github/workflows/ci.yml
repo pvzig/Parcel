@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: Host build, test, and format
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    env:
+      PARCEL_INCLUDE_WASM_TESTS: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Format lint
+        run: swift format lint --strict --recursive --parallel Sources Tests Package.swift
+
+      - name: Build
+        run: swift build --scratch-path .build-ci-build
+
+      - name: Test
+        run: swift test --parallel --scratch-path .build-ci-tests
+
+  wasm:
+    name: Wasm browser tests
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    # The Wasm lane needs a Swift SDK bundle, which is not distributed with the toolchain image.
+    # Set the WASM_SDK_URL and WASM_SDK_CHECKSUM repository variables to the swiftwasm SDK
+    # matching .swift-version, and this job starts running. Until then it is skipped rather than
+    # reported as a false pass.
+    if: vars.WASM_SDK_URL != '' && vars.WASM_SDK_CHECKSUM != ''
+    env:
+      PARCEL_INCLUDE_WASM_TESTS: "1"
+      PARCEL_SWIFT_SDK: ${{ vars.WASM_SDK_NAME || 'swift-6.3-RELEASE_wasm' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Swift SDK
+        run: swift sdk install "${{ vars.WASM_SDK_URL }}" --checksum "${{ vars.WASM_SDK_CHECKSUM }}"
+
+      - name: Resolve dependencies
+        run: swift package --scratch-path .build resolve
+
+      - name: Point PackageToJS at the vendored browser_wasi_shim
+        run: |
+          template_path=".build/checkouts/JavaScriptKit/Plugins/PackageToJS/Templates/package.json"
+          chmod u+w "$template_path"
+          node -e '
+            const fs = require("fs");
+            const path = process.argv[1];
+            const shim = process.argv[2];
+            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+            pkg.dependencies["@bjorn3/browser_wasi_shim"] = `file:${shim}`;
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
+          ' "$template_path" "$PWD/Vendor/browser_wasi_shim"
+
+      - name: Test
+        run: |
+          rm -rf \
+            .build/plugins/PackageToJS/outputs/PackageTests \
+            .build/plugins/PackageToJS/outputs/PackageTests.tmp
+          swift package --scratch-path .build --swift-sdk "$PARCEL_SWIFT_SDK" js test \
+            --default-platform node --prelude ./Tests/prelude.mjs -Xnode --expose-gc

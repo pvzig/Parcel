@@ -62,11 +62,13 @@ let client = Client(
 )
 ```
 
+The encoder and decoder factories run for each encode or decode operation. This keeps mutable Foundation coders isolated between concurrent requests.
+
 ### Codecs
 
-Parcel includes additional built-in codecs for common wire formats: ` .formURLEncoded()`, `.plainText()`, `.rawData()`.
+Parcel includes additional built-in codecs for common wire formats: `.formURLEncoded()`, `.plainText()`, `.rawData()`.
 
-If you need a different typed wire format entirely, provide a custom `BodyCodec`:
+If you need a different typed wire format entirely, provide a custom `BodyCodec`. Declare the codec's media types on the codec itself so every way of constructing a `Client.Codec` from it sends the right `Content-Type` and `Accept` headers:
 
 ```swift
 enum CustomCodecError: Error {
@@ -74,6 +76,9 @@ enum CustomCodecError: Error {
 }
 
 struct CustomCodec: BodyCodec {
+    var defaultRequestContentType: String? { "application/custom" }
+    var defaultAccept: [String] { ["application/custom"] }
+
     func encode<Request: Encodable>(_ value: Request) throws -> Data {
         throw CustomCodecError.unsupported
     }
@@ -85,19 +90,40 @@ struct CustomCodec: BodyCodec {
 
 let client = Client(
     configuration: ClientConfiguration(
-        defaultCodec: .custom(
-            CustomCodec(),
-            requestContentType: "application/custom",
-            accept: ["application/custom"]
-        )
+        defaultCodec: Client.Codec(bodyCodec: CustomCodec())
     )
 )
 ```
 
 ## Runtime
 
-Parcel is browser-oriented. `Client()` is only compiled on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, the built-in transport supports both window-style and worker-style globals; unsupported JavaScript runtimes fail requests with `ClientError.unsupportedPlatform`.
+Parcel is browser-oriented. `Client()` is only compiled on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, `Client()` constructs a `BrowserTransport`; requests made in an unsupported JavaScript runtime fail with `ClientError.unsupportedPlatform`.
 
 `BrowserTransport` is likewise only available on those `wasm32` builds. It installs the JavaScriptKit executor when it initializes in a supported runtime.
 
-Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing request bodies are still buffered before Parcel passes them to `fetch`, with a 2 MiB default cap configurable via `BrowserTransport(maximumBufferedRequestBodyBytes:)`.
+Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing request bodies are still buffered before Parcel passes them to `fetch`, with a 2 MiB default cap configurable through `BrowserTransport(maximumBufferedRequestBodyBytes:)`. Inject that transport into `Client` when you need a different cap.
+
+A timeout covers the fetch *and* the consumption of the response body, because the transport clears its abort timer only once the body reaches end-of-stream. With the 90 second default, a `Client.raw` caller streaming a long-lived response (server-sent events, a slow download) sees the request aborted with `ClientError.timedOut` mid-stream. Use a client configured with `ClientConfiguration(defaultTimeout: nil)` for those calls; a per-call `timeout: nil` selects the configured default rather than disabling it.
+
+### Fetch Options
+
+`fetch` defaults to `credentials: "same-origin"`, so cross-origin requests do not carry cookies unless you ask for them. Configure the Fetch `credentials`, `mode`, `cache`, and `redirect` options on an injected `BrowserTransport`:
+
+```swift
+let client = Client(
+    transport: BrowserTransport(
+        requestOptions: BrowserRequestOptions(
+            credentials: .include,
+            mode: .cors
+        )
+    )
+)
+```
+
+Options left `nil` are omitted from the Fetch init dictionary entirely, so the browser applies its own default. Plain `Client()` uses `BrowserTransport`'s default options.
+
+## Errors
+
+Typed requests turn non-2xx responses into `ClientError.unsuccessfulStatusCode`; raw requests return those response statuses unchanged. Both paths can throw `ClientError` for transport and validation failures: network-level Fetch failures (offline, DNS, CORS) use `.fetchFailure` with the underlying JavaScript metadata, unsupported runtimes use `.unsupportedPlatform`, browser globals that disappear after transport initialization use `.invalidJavaScriptContext`, timeouts use `.timedOut`, typed-request URLs that are not absolute — no scheme, or a scheme with no host such as `mailto:` — use `.invalidRequestURL`, and `GET`/`HEAD` requests with bodies use `.requestBodyNotAllowed`. Swift task cancellation remains `CancellationError`.
+
+When upgrading code that exhaustively switches over `ClientError`, account for the newer Fetch, timeout, URL-validation, response-body, and request-body cases.

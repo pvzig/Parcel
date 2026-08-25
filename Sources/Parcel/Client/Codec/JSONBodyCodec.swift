@@ -9,6 +9,9 @@ public struct JSONBodyCodec: BodyCodec, Sendable {
   public var makeEncoder: @Sendable () -> JSONEncoder
   public var makeDecoder: @Sendable () -> JSONDecoder
 
+  public var defaultRequestContentType: String? { "application/json" }
+  public var defaultAccept: [String] { ["application/json"] }
+
   public init(
     makeEncoder: @escaping @Sendable () -> JSONEncoder = { JSONEncoder() },
     makeDecoder: @escaping @Sendable () -> JSONDecoder = { JSONDecoder() }

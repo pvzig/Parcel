@@ -23,8 +23,16 @@ var packageTargets: [Target] = [
     name: "Parcel",
     dependencies: [
       .product(name: "HTTPTypes", package: "swift-http-types"),
-      .product(name: "JavaScriptEventLoop", package: "JavaScriptKit"),
-      .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+      .product(
+        name: "JavaScriptEventLoop",
+        package: "JavaScriptKit",
+        condition: .when(platforms: [.wasi])
+      ),
+      .product(
+        name: "JavaScriptKit",
+        package: "JavaScriptKit",
+        condition: .when(platforms: [.wasi])
+      ),
     ]
   ),
   .testTarget(
@@ -39,6 +47,7 @@ if includeWasmBrowserTests {
       name: "ParcelBrowserTests",
       dependencies: [
         "Parcel",
+        .product(name: "JavaScriptEventLoop", package: "JavaScriptKit"),
         .product(name: "JavaScriptEventLoopTestSupport", package: "JavaScriptKit"),
         .product(name: "JavaScriptKit", package: "JavaScriptKit"),
       ],

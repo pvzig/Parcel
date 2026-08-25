@@ -7,12 +7,32 @@
 struct FormURLEncodedEncoder: Encoder {
   private final class Storage {
     var fields: [(name: String, value: String)] = []
+    private var deferredError: EncodingError?
 
     func append(name: String, value: String) {
       fields.append((name: name, value: value))
     }
 
-    func serializedData() -> Data {
+    func recordUnsupportedNestedContainer(
+      _ value: String,
+      codingPath: [any CodingKey],
+      description: String
+    ) {
+      guard deferredError == nil else {
+        return
+      }
+
+      deferredError = EncodingError.invalidValue(
+        value,
+        .init(codingPath: codingPath, debugDescription: description)
+      )
+    }
+
+    func serializedData() throws -> Data {
+      if let deferredError {
+        throw deferredError
+      }
+
       let body =
         fields
         .map { Self.encodeComponent($0.name) + "=" + Self.encodeComponent($0.value) }
@@ -26,7 +46,7 @@ struct FormURLEncodedEncoder: Encoder {
 
       for byte in string.utf8 {
         switch byte {
-        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x2D, 0x2E, 0x5F, 0x7E:
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x2A, 0x2D, 0x2E, 0x5F:
           encoded.unicodeScalars.append(UnicodeScalar(byte))
         case 0x20:
           encoded.append("+")
@@ -50,31 +70,42 @@ struct FormURLEncodedEncoder: Encoder {
 
   private let storage: Storage
   private let fieldName: String?
+  private let isArrayElement: Bool
 
   private init(
     storage: Storage = .init(),
     codingPath: [any CodingKey] = [],
     userInfo: [CodingUserInfoKey: Any] = [:],
-    fieldName: String? = nil
+    fieldName: String? = nil,
+    isArrayElement: Bool = false
   ) {
     self.storage = storage
     self.codingPath = codingPath
     self.userInfo = userInfo
     self.fieldName = fieldName
+    self.isArrayElement = isArrayElement
   }
 
   static func encode<Value: Encodable>(_ value: Value) throws -> Data {
     let encoder = Self()
     try value.encode(to: encoder)
-    return encoder.storage.serializedData()
+    return try encoder.storage.serializedData()
   }
 
   func container<Key>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
-    KeyedEncodingContainer(KeyedContainer<Key>(encoder: self))
+    if fieldName != nil || isArrayElement {
+      storage.recordUnsupportedNestedContainer(
+        codingPath.last?.stringValue ?? "",
+        codingPath: codingPath,
+        description: FormURLEncodedShapeError.nestedKeyedContainer
+      )
+    }
+
+    return KeyedEncodingContainer(KeyedContainer<Key>(encoder: self))
   }
 
   func unkeyedContainer() -> any UnkeyedEncodingContainer {
-    UnkeyedContainer(encoder: self)
+    UnkeyedContainer(encoder: self, isNested: isArrayElement)
   }
 
   func singleValueContainer() -> any SingleValueEncodingContainer {
@@ -90,6 +121,16 @@ struct FormURLEncodedEncoder: Encoder {
     )
   }
 
+  fileprivate func elementEncoder() -> Self {
+    Self(
+      storage: storage,
+      codingPath: codingPath,
+      userInfo: userInfo,
+      fieldName: fieldName,
+      isArrayElement: true
+    )
+  }
+
   fileprivate func appendValue(_ value: String) throws {
     guard let fieldName else {
       throw EncodingError.invalidValue(
@@ -97,7 +138,7 @@ struct FormURLEncodedEncoder: Encoder {
         .init(
           codingPath: codingPath,
           debugDescription:
-            "FormURLEncodedBodyCodec only supports top-level keyed values."
+            FormURLEncodedShapeError.topLevelKeyedOnly
         )
       )
     }
@@ -111,7 +152,7 @@ struct FormURLEncodedEncoder: Encoder {
       .init(
         codingPath: codingPath,
         debugDescription:
-          "FormURLEncodedBodyCodec does not support nested keyed containers."
+          FormURLEncodedShapeError.nestedKeyedContainer
       )
     )
   }
@@ -222,9 +263,29 @@ extension FormURLEncodedEncoder {
     var count = 0
 
     let encoder: FormURLEncodedEncoder
+    let isNested: Bool
+
+    init(encoder: FormURLEncodedEncoder, isNested: Bool = false) {
+      self.encoder = encoder
+      self.isNested = isNested
+
+      if isNested {
+        encoder.storage.recordUnsupportedNestedContainer(
+          codingPath.last?.stringValue ?? "",
+          codingPath: codingPath,
+          description: FormURLEncodedShapeError.nestedArray
+        )
+      }
+    }
 
     mutating func encodeNil() throws {
-      count += 1
+      throw EncodingError.invalidValue(
+        "nil",
+        .init(
+          codingPath: codingPath,
+          debugDescription: FormURLEncodedShapeError.nilArrayElement
+        )
+      )
     }
 
     mutating func encode(_ value: Bool) throws {
@@ -285,7 +346,8 @@ extension FormURLEncodedEncoder {
 
     mutating func encode<T: Encodable>(_ value: T) throws {
       try ensureFieldName()
-      try value.encode(to: encoder)
+      try ensureNotNested(value)
+      try value.encode(to: encoder.elementEncoder())
       count += 1
     }
 
@@ -296,7 +358,7 @@ extension FormURLEncodedEncoder {
     }
 
     mutating func nestedUnkeyedContainer() -> any UnkeyedEncodingContainer {
-      encoder.unkeyedContainer()
+      UnkeyedContainer(encoder: encoder, isNested: true)
     }
 
     mutating func superEncoder() -> any Encoder {
@@ -305,6 +367,7 @@ extension FormURLEncodedEncoder {
 
     private mutating func encodeScalar(_ value: String) throws {
       try ensureFieldName()
+      try ensureNotNested(value)
       try encoder.appendValue(value)
       count += 1
     }
@@ -316,7 +379,19 @@ extension FormURLEncodedEncoder {
           .init(
             codingPath: codingPath,
             debugDescription:
-              "FormURLEncodedBodyCodec only supports arrays nested under a keyed value."
+              FormURLEncodedShapeError.arrayUnderKeyOnly
+          )
+        )
+      }
+    }
+
+    private func ensureNotNested(_ value: some Any) throws {
+      guard isNested == false else {
+        throw EncodingError.invalidValue(
+          value,
+          .init(
+            codingPath: codingPath,
+            debugDescription: FormURLEncodedShapeError.nestedArray
           )
         )
       }
@@ -328,7 +403,17 @@ extension FormURLEncodedEncoder {
 
     let encoder: FormURLEncodedEncoder
 
-    mutating func encodeNil() throws {}
+    mutating func encodeNil() throws {
+      guard encoder.isArrayElement == false else {
+        throw EncodingError.invalidValue(
+          "nil",
+          .init(
+            codingPath: codingPath,
+            debugDescription: FormURLEncodedShapeError.nilArrayElement
+          )
+        )
+      }
+    }
 
     mutating func encode(_ value: Bool) throws {
       try encoder.appendValue(value ? "true" : "false")

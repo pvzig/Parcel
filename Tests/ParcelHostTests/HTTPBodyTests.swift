@@ -11,6 +11,36 @@
     #expect(try await body.collect() == Data("hello".utf8))
   }
 
+  @Test func emptyHTTPBodyUsesKnownZeroLengthAndSupportsMultipleIterations() async throws {
+    let body = HTTPBody()
+
+    #expect(body.length == .known(0))
+    #expect(try await body.collect() == Data())
+    #expect(try await body.collect() == Data())
+  }
+
+  @Test func byteCollectionHTTPBodyInfersLength() async throws {
+    let body = HTTPBody([0x00, 0x7F, 0xFF])
+
+    #expect(body.length == .known(3))
+    #expect(try await body.collect() == Data([0x00, 0x7F, 0xFF]))
+  }
+
+  @Test func genericByteSequenceHTTPBodyMapsElementsToChunks() async throws {
+    let stream = AsyncStream<[UInt8]> { continuation in
+      continuation.yield([0x01, 0x02])
+      continuation.yield([0x03])
+      continuation.finish()
+    }
+    let body = HTTPBody(
+      stream,
+      length: .known(3),
+      iterationBehavior: .single
+    )
+
+    #expect(try await body.collect() == Data([0x01, 0x02, 0x03]))
+  }
+
   @Test func singleIterationHTTPBodyRejectsSecondCollection() async throws {
     let body = HTTPBody(
       AsyncStream<HTTPBody.ByteChunk> { continuation in
@@ -61,5 +91,35 @@
     let body = HTTPBody("hello")
 
     #expect(try await body.text() == "hello")
+  }
+
+  @Test func httpBodyCollectionCooperatesWithCancellationBetweenChunks() async {
+    struct InfiniteChunks: AsyncSequence, Sendable {
+      typealias Element = [UInt8]
+
+      struct AsyncIterator: AsyncIteratorProtocol {
+        mutating func next() async -> [UInt8]? {
+          [0x61]
+        }
+      }
+
+      func makeAsyncIterator() -> AsyncIterator {
+        .init()
+      }
+    }
+
+    let body = HTTPBody(
+      InfiniteChunks(),
+      length: .unknown,
+      iterationBehavior: .single
+    )
+    let task = Task {
+      try await body.collect(upTo: .max)
+    }
+    task.cancel()
+
+    await #expect(throws: CancellationError.self) {
+      _ = try await task.value
+    }
   }
 #endif

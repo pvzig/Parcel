@@ -13,3 +13,5 @@ DerivedData/
 /.build-wasm-node-run
 /.build-wasm-tests
 /.build-xcode-build
+/.build-ci-build
+/.build-ci-tests

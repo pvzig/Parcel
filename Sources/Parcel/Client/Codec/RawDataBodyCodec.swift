@@ -6,6 +6,10 @@
 
 /// A `BodyCodec` that passes typed `Data` request and response bodies through unchanged.
 public struct RawDataBodyCodec: BodyCodec, Sendable {
+  public var defaultRequestContentType: String? { "application/octet-stream" }
+  public var defaultAccept: [String] { ["application/octet-stream"] }
+  public var decodesEmptyResponseBodies: Bool { true }
+
   public init() {}
 
   public func encode<Request: Encodable>(_ value: Request) throws -> Data {

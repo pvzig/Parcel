@@ -17,6 +17,8 @@ const decoder = globalThis.TextDecoder
 const enqueueMicrotask = globalThis.queueMicrotask
   ? globalThis.queueMicrotask.bind(globalThis)
   : (job) => Promise.resolve().then(job);
+const parcelClearTimeout = globalThis.clearTimeout;
+const parcelSetTimeout = globalThis.setTimeout;
 
 if (globalThis.AbortController == null) {
   class ParcelAbortSignal {
@@ -68,15 +70,13 @@ function defaultBehavior() {
     fetchDelayMilliseconds: null,
     fetchErrorName: null,
     fetchErrorMessage: null,
-    arrayBufferDelayMilliseconds: null,
-    arrayBufferErrorName: null,
-    arrayBufferErrorMessage: null,
-    jsonDelayMilliseconds: null,
-    jsonErrorName: null,
-    jsonErrorMessage: null,
-    textDelayMilliseconds: null,
-    textErrorName: null,
-    textErrorMessage: null,
+    bodyReadDelayMilliseconds: null,
+    bodyReadErrorName: null,
+    bodyReadErrorMessage: null,
+    cancelErrorName: null,
+    cancelErrorMessage: null,
+    omitResponseStatus: false,
+    invalidBodyChunk: false,
   };
 }
 
@@ -94,6 +94,7 @@ function defaultResponse() {
 const state = {
   requests: [],
   nextResponse: defaultResponse(),
+  requestStateWaiters: [],
 };
 
 function normalizeHeaders(headers) {
@@ -160,6 +161,62 @@ function makeNamedError(name, message) {
   const error = new Error(message ?? `${name}`);
   error.name = name;
   return error;
+}
+
+function clearRequestStateWaiters() {
+  const waiters = state.requestStateWaiters;
+  state.requestStateWaiters = [];
+
+  for (const waiter of waiters) {
+    parcelClearTimeout(waiter.timer);
+    waiter.resolve(false);
+  }
+}
+
+function markRequestState(requestRecord, property) {
+  requestRecord[property] = true;
+  const requestIndex = state.requests.indexOf(requestRecord);
+  if (requestIndex < 0) {
+    return;
+  }
+
+  const remainingWaiters = [];
+  for (const waiter of state.requestStateWaiters) {
+    if (waiter.requestIndex === requestIndex && waiter.property === property) {
+      parcelClearTimeout(waiter.timer);
+      waiter.resolve(true);
+    } else {
+      remainingWaiters.push(waiter);
+    }
+  }
+  state.requestStateWaiters = remainingWaiters;
+}
+
+function waitForRequestState(requestIndex, property) {
+  if (state.requests[requestIndex]?.[property] === true) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      requestIndex,
+      property,
+      resolve,
+      timer: null,
+    };
+    waiter.timer = parcelSetTimeout(() => {
+      state.requestStateWaiters = state.requestStateWaiters.filter(
+        (candidate) => candidate !== waiter
+      );
+      reject(
+        makeNamedError(
+          "TimeoutError",
+          `Timed out waiting for request ${requestIndex} state '${property}'.`
+        )
+      );
+    }, 1000);
+    state.requestStateWaiters.push(waiter);
+  });
 }
 
 function parseBehavior(behaviorJSON) {
@@ -282,11 +339,6 @@ function makeHeaders(headers) {
   return headersObject;
 }
 
-function toArrayBuffer(text) {
-  const bytes = encoder.encode(text);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-}
-
 function makeBodyStream(bodyText, signal, requestRecord, behavior) {
   const streamState = {
     locked: false,
@@ -318,15 +370,17 @@ function makeBodyStream(bodyText, signal, requestRecord, behavior) {
             );
           }
 
+          markRequestState(requestRecord, "bodyReadStarted");
+
           return runAbortableOperation({
             signal,
             requestRecord,
-            delayMilliseconds: behavior.arrayBufferDelayMilliseconds ?? 0,
+            delayMilliseconds: behavior.bodyReadDelayMilliseconds ?? 0,
             perform: () => {
-              if (behavior.arrayBufferErrorName) {
+              if (behavior.bodyReadErrorName) {
                 throw makeNamedError(
-                  behavior.arrayBufferErrorName,
-                  behavior.arrayBufferErrorMessage
+                  behavior.bodyReadErrorName,
+                  behavior.bodyReadErrorMessage
                 );
               }
 
@@ -335,18 +389,30 @@ function makeBodyStream(bodyText, signal, requestRecord, behavior) {
               }
 
               streamState.consumed = true;
+              if (behavior.invalidBodyChunk) {
+                return { done: false, value: { invalid: true } };
+              }
               return { done: false, value: encoder.encode(bodyText) };
             },
           });
         },
         cancel() {
-          requestRecord.bodyCancelled = true;
-          released = true;
+          markRequestState(requestRecord, "bodyCancelled");
           streamState.consumed = true;
-          streamState.locked = false;
+
+          if (behavior.cancelErrorName) {
+            return Promise.reject(
+              makeNamedError(
+                behavior.cancelErrorName,
+                behavior.cancelErrorMessage
+              )
+            );
+          }
+
           return Promise.resolve();
         },
         releaseLock() {
+          markRequestState(requestRecord, "readerReleased");
           released = true;
           streamState.locked = false;
         },
@@ -363,81 +429,13 @@ function makeResponse(url, requestRecord, signal) {
   const bodyText = responseBodyText();
   const behavior = state.nextResponse.behavior;
   const response = {
-    status: state.nextResponse.status,
+    status: behavior.omitResponseStatus ? undefined : state.nextResponse.status,
     url: state.nextResponse.url ?? String(url),
     headers: makeHeaders(state.nextResponse.headers),
     body:
       state.nextResponse.bodyText === null && state.nextResponse.jsonBody === null
         ? null
         : makeBodyStream(bodyText, signal, requestRecord, behavior),
-    arrayBuffer() {
-      if (this !== response) {
-        throw makeNamedError("TypeError", "Illegal invocation");
-      }
-
-      return runAbortableOperation({
-        signal,
-        requestRecord,
-        delayMilliseconds: behavior.arrayBufferDelayMilliseconds ?? 0,
-        perform: () => {
-          if (behavior.arrayBufferErrorName) {
-            throw makeNamedError(
-              behavior.arrayBufferErrorName,
-              behavior.arrayBufferErrorMessage
-            );
-          }
-
-          return toArrayBuffer(bodyText);
-        },
-      });
-    },
-    json() {
-      if (this !== response) {
-        throw makeNamedError("TypeError", "Illegal invocation");
-      }
-
-      return runAbortableOperation({
-        signal,
-        requestRecord,
-        delayMilliseconds: behavior.jsonDelayMilliseconds ?? 0,
-        perform: () => {
-          if (behavior.jsonErrorName) {
-            throw makeNamedError(behavior.jsonErrorName, behavior.jsonErrorMessage);
-          }
-
-          if (state.nextResponse.jsonBody !== null) {
-            return state.nextResponse.jsonBody;
-          }
-
-          return JSON.parse(bodyText);
-        },
-      });
-    },
-    text() {
-      if (this !== response) {
-        throw makeNamedError("TypeError", "Illegal invocation");
-      }
-
-      return runAbortableOperation({
-        signal,
-        requestRecord,
-        delayMilliseconds: behavior.textDelayMilliseconds ?? 0,
-        perform: () => {
-          if (behavior.textErrorName) {
-            throw makeNamedError(behavior.textErrorName, behavior.textErrorMessage);
-          }
-
-          return bodyText;
-        },
-      });
-    },
-    clone() {
-      if (this !== response) {
-        throw makeNamedError("TypeError", "Illegal invocation");
-      }
-
-      return makeResponse(url, requestRecord, signal);
-    },
   };
 
   return response;
@@ -447,9 +445,18 @@ setRuntimeScope("window");
 
 globalThis.__parcelTest = {
   reset() {
+    clearRequestStateWaiters();
     state.requests = [];
     state.nextResponse = defaultResponse();
     setRuntimeScope("window");
+    globalThis.fetch = parcelFetch;
+    globalThis.clearTimeout = parcelClearTimeout;
+  },
+  removeFetch() {
+    delete globalThis.fetch;
+  },
+  removeClearTimeout() {
+    delete globalThis.clearTimeout;
   },
   configureRuntimeScope(scope) {
     setRuntimeScope(String(scope));
@@ -464,12 +471,15 @@ globalThis.__parcelTest = {
       behavior: parseBehavior(behaviorJSON),
     };
   },
+  waitForRequestState(requestIndex, property) {
+    return waitForRequestState(Number(requestIndex), String(property));
+  },
   recordedRequestsJSON() {
     return JSON.stringify(state.requests);
   },
 };
 
-globalThis.fetch = async function fetch(url, init = {}) {
+async function parcelFetch(url, init = {}) {
   const requestRecord = {
     url: String(url),
     method: String(init.method ?? "GET"),
@@ -478,8 +488,11 @@ globalThis.fetch = async function fetch(url, init = {}) {
     mode: init.mode == null ? null : String(init.mode),
     credentials: init.credentials == null ? null : String(init.credentials),
     cache: init.cache == null ? null : String(init.cache),
+    redirect: init.redirect == null ? null : String(init.redirect),
     aborted: false,
+    bodyReadStarted: false,
     bodyCancelled: false,
+    readerReleased: false,
   };
 
   state.requests.push(requestRecord);
@@ -499,4 +512,6 @@ globalThis.fetch = async function fetch(url, init = {}) {
       return makeResponse(url, requestRecord, signal);
     },
   });
-};
+}
+
+globalThis.fetch = parcelFetch;
