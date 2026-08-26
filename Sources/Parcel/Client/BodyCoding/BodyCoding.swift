@@ -4,8 +4,7 @@
     import Foundation
 #endif
 
-extension Client {
-    public struct BodyCoding: Sendable {
+public struct BodyCoding: Sendable {
         /// The encoder used to transform typed request values into raw body bytes.
         public let requestEncoder: any RequestBodyEncoder
 
@@ -106,5 +105,4 @@ extension Client {
         {
             try responseDecoder.decode(type, from: data)
         }
-    }
 }

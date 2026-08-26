@@ -26,23 +26,23 @@
     }
 
     @Test func directBodyCodingConstructionUsesComponentMediaTypeDefaults() {
-        let json = Client.BodyCoding(
+        let json = BodyCoding(
             requestEncoder: JSONBodyEncoder(),
             responseDecoder: JSONBodyDecoder()
         )
         #expect(json.requestContentType == "application/json")
         #expect(json.accept == ["application/json"])
 
-        let form = Client.BodyCoding.formURLEncoded()
+        let form = BodyCoding.formURLEncoded()
         #expect(form.requestContentType == "application/x-www-form-urlencoded")
         #expect(form.accept == ["application/json"])
 
-        let formWithTextResponse = Client.BodyCoding.formURLEncoded(
+        let formWithTextResponse = BodyCoding.formURLEncoded(
             decoder: PlainTextBodyDecoder()
         )
         #expect(formWithTextResponse.accept == ["text/plain"])
 
-        let custom = Client.BodyCoding(
+        let custom = BodyCoding(
             requestEncoder: JSONBodyEncoder(),
             responseDecoder: JSONBodyDecoder(),
             requestContentType: "application/vnd.parcel+json",
@@ -53,7 +53,7 @@
     }
 
     @Test func componentsWithoutDeclaredMediaTypesApplyNoHeaderDefaults() {
-        let bodyCoding = Client.BodyCoding(
+        let bodyCoding = BodyCoding(
             requestEncoder: OpaqueRequestBodyEncoder(),
             responseDecoder: OpaqueResponseBodyDecoder()
         )
@@ -63,7 +63,7 @@
     }
 
     @Test func explicitBodyCodingMediaTypesCanSuppressComponentDefaults() {
-        let bodyCoding = Client.BodyCoding(
+        let bodyCoding = BodyCoding(
             requestEncoder: JSONBodyEncoder(),
             responseDecoder: JSONBodyDecoder(),
             requestContentType: nil,

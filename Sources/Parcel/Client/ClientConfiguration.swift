@@ -10,7 +10,7 @@ public struct ClientConfiguration: Sendable {
     public let defaultHeaders: HTTPFields
 
     /// The body coding used whenever an operation does not declare its own.
-    public let defaultBodyCoding: Client.BodyCoding
+    public let defaultBodyCoding: BodyCoding
 
     /// The cap on response bytes Parcel buffers in memory when decoding or reporting an error body.
     public let maximumBufferedBodyBytes: Int
@@ -18,7 +18,7 @@ public struct ClientConfiguration: Sendable {
     /// Creates a configuration. Every parameter has a conservative default.
     public init(
         defaultHeaders: HTTPFields = [:],
-        defaultBodyCoding: Client.BodyCoding = .json(),
+        defaultBodyCoding: BodyCoding = .json(),
         maximumBufferedBodyBytes: Int = Self.defaultMaximumBufferedBodyBytes
     ) {
         precondition(maximumBufferedBodyBytes >= 0, "maximumBufferedBodyBytes must be nonnegative")

@@ -43,7 +43,7 @@ buffering, and client defaults while upstream `FetchHTTPClient` owns browser HTT
 
 ## Body coding
 
-- `Client.BodyCoding` combines a `RequestBodyEncoder`, a `ResponseBodyDecoder`, and their optional
+- `BodyCoding` combines a `RequestBodyEncoder`, a `ResponseBodyDecoder`, and their optional
   default media types. Explicit `nil` or empty media-type arguments suppress automatic headers.
 - Built-in coding supports JSON, form URL-encoded requests with JSON responses, plain text, and raw
   data.

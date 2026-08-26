@@ -116,7 +116,7 @@ let client = Client(
 ```
 
 Custom wire formats can implement `RequestBodyEncoder`, `ResponseBodyDecoder`, or both. Each
-component declares the media-type defaults it owns, and `Client.BodyCoding` combines them.
+component declares the media-type defaults it owns, and `BodyCoding` combines them.
 
 ## HTTP client model
 
