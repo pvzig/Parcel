@@ -119,19 +119,23 @@ Parcel exposes:
 
 ## HTTP client model
 
-- `Client` remains non-generic. Its generic initializer converts a concrete, reference-semantic
-  `HTTPAPIs.HTTPClient` into a private `@Sendable` request closure.
-- The initializer requires `HTTPClient & AnyObject`. The concrete client is captured directly and
-  may receive concurrent calls, so its conformance owns synchronization for mutable state.
+- Public construction is limited to `Client(configuration:)` on browser-capable Wasm builds with
+  `HTTP_API_ENABLE_WASM=1`. It installs JavaScriptKit's global executor and owns
+  `FetchHTTPClient()`.
+- Parcel does not expose `HTTPAPIs.HTTPClient` injection as public API. The internal initializer
+  converts a concrete, reference-semantic HTTP client into a private `@Sendable` request closure so
+  the Fetch-backed initializer and deterministic host tests share the same request path.
+- The internal initializer accepts `some HTTPClient & AnyObject`. The concrete client is captured
+  directly and may receive concurrent calls, so its conformance owns synchronization for mutable
+  state.
 - Parcel supplies `httpClient.defaultRequestOptions` and converts optional request `Data` to
   `HTTPClientRequestBody<Writer>.data`.
 - Response collection, status validation inputs, and response decoding bytes are obtained during
   `HTTPClient.perform`'s scoped response handler. Neither the `AsyncReader` nor its buffers escape.
 - Reader collection handles `EitherError<Reader.ReadFailure, Never>` by unwrapping the reader-side
   failure after the infallible buffer callback.
-- On Wasm with the gated products available, `Client()` installs JavaScriptKit's global executor and
-  wraps `FetchHTTPClient()`.
-- Host builds and alternative runtimes must inject a concrete `HTTPAPIs.HTTPClient`.
+- Host builds cannot publicly construct `Client`; native compilation exists to exercise Parcel's
+  core behavior through the internal transport seam.
 
 ## Upstream Fetch boundary
 

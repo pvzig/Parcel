@@ -14,8 +14,7 @@ import HTTPTypes
   typealias DefaultExecutorFactory = JavaScriptEventLoop
 #endif
 
-/// Sends typed Parcel requests through an `HTTPAPIs.HTTPClient` and decodes each response inside
-/// the HTTP client's scoped response handler.
+/// Sends typed Parcel requests through the browser Fetch API.
 public struct Client: Sendable {
   private struct BufferedHTTPResponse: Sendable {
     let response: HTTPResponse
@@ -42,8 +41,7 @@ public struct Client: Sendable {
     @available(
       *,
       unavailable,
-      message:
-        "Client() requires a Wasm build with HTTP_API_ENABLE_WASM=1. Inject an HTTPAPIs.HTTPClient on host builds."
+      message: "Client requires a browser-capable Wasm build with HTTP_API_ENABLE_WASM=1."
     )
     /// Creates a client backed by the browser Fetch API through `FetchHTTPClient`.
     public init(configuration: ClientConfiguration = .init()) {
@@ -51,25 +49,22 @@ public struct Client: Sendable {
     }
   #endif
 
-  /// Creates a Parcel client over a reference-semantic `HTTPAPIs.HTTPClient` implementation.
+  /// Internal transport seam used by the Fetch-backed initializer and deterministic host tests.
   ///
   /// The underlying client is captured directly and may service concurrent Parcel calls. Its
   /// `HTTPClient` conformance is therefore responsible for synchronizing any mutable shared state.
   @available(anyAppleOS 26.0, *)
-  public init<UnderlyingClient>(
+  init(
     configuration: ClientConfiguration = .init(),
-    httpClient: UnderlyingClient
-  ) where UnderlyingClient: HTTPAPIs.HTTPClient & AnyObject {
+    httpClient: some HTTPAPIs.HTTPClient & AnyObject
+  ) {
     self.configuration = configuration
     self.performRequest = { request, body, maximumBufferedBodyBytes in
       var httpClient = httpClient
       let options = httpClient.defaultRequestOptions
-      let requestBody: HTTPClientRequestBody<UnderlyingClient.Writer>? =
-        body.map { .data($0) }
-
       return try await httpClient.perform(
         request: request,
-        body: requestBody,
+        body: body.map { .data($0) },
         options: options
       ) { response, reader in
         BufferedHTTPResponse(

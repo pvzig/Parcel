@@ -120,17 +120,10 @@ component declares the media-type defaults it owns, and `Client.BodyCoding` comb
 
 ## HTTP client model
 
-On Wasm, `Client()` installs JavaScriptKit's event-loop executor and constructs upstream
-`FetchHTTPClient`. Host builds and alternative runtimes inject a reference-semantic
-`HTTPAPIs.HTTPClient`:
-
-```swift
-let client = Client(httpClient: MyHTTPClient())
-```
-
-The injected HTTP client may service concurrent Parcel requests and is responsible for
-synchronizing its own shared mutable state. Parcel uses its default request options and drains each
-scoped response reader completely before `HTTPClient.perform` returns.
+`Client(configuration:)` is available on browser-capable Wasm builds with
+`HTTP_API_ENABLE_WASM=1`. It installs JavaScriptKit's event-loop executor and owns the upstream
+`FetchHTTPClient`; Parcel does not expose a transport-injection API. Parcel drains each scoped
+response reader completely before the upstream HTTP operation returns.
 
 The pinned `FetchHTTPClient` currently buffers outgoing request bodies and does not yet expose
 per-request Fetch options, timeouts, AbortController cancellation propagation, or the final redirect
@@ -141,5 +134,5 @@ URL. Parcel intentionally does not recreate those browser features in a second t
 Typed requests turn non-2xx responses into `ClientError.unsuccessfulStatusCode`; raw requests return
 those statuses. Parcel also reports invalid absolute URLs, disallowed `GET` or `HEAD` bodies, empty
 typed responses, and responses larger than the configured buffer. Encoding, decoding, cancellation,
-network, and reader failures surface from the body coder or underlying HTTP client without being
+network, and reader failures surface from the body coder or upstream Fetch client without being
 re-wrapped as Parcel transport errors.
