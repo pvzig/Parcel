@@ -27,8 +27,8 @@ buffering, and client defaults while upstream `FetchHTTPClient` owns browser HTT
   Raw calls do not add body-coding headers.
 - Request headers replace configured defaults with the same case-insensitive name. Other defaults
   stay ahead of request headers, and repeated fields within either layer are preserved.
-- Typed requests require an absolute URL with an authority. Typed and raw `GET` and `HEAD` requests
-  reject bodies with `ClientError.requestBodyNotAllowed`.
+- `Client` requires typed requests to use an absolute URL with an authority and rejects bodies on
+  typed and raw `GET` and `HEAD` requests with `ClientError.requestBodyNotAllowed`.
 - Typed requests accept any 2xx status and reject other statuses before decoding. Raw requests
   return every status unchanged.
 - `ClientConfiguration` contains immutable default headers, default body coding, and a nonnegative
@@ -96,6 +96,6 @@ swift package --scratch-path .build \
 ```sh
 PARCEL_INCLUDE_WASM_TESTS=0 swift build --scratch-path .build-xcode-build
 PARCEL_INCLUDE_WASM_TESTS=0 swift test --parallel --scratch-path .build-xcode-tests
-swift-format format . --recursive --parallel -i
+/opt/homebrew/bin/swift-format format . --recursive --parallel -i
 git diff --check
 ```

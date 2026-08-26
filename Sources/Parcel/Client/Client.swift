@@ -93,7 +93,7 @@ public struct Client: Sendable {
   ) async throws -> Response<Output> {
     let bodyCoding = effectiveBodyCoding(request.bodyCoding)
     try validateRequestURL(request.url)
-    try request.method.validateBodyAllowed(hasBody: request.hasBody)
+    try validateBodyAllowed(request.method, hasBody: request.hasBody)
 
     let response = try await performRequest(
       makeRequest(from: request, bodyCoding: bodyCoding),
@@ -112,7 +112,7 @@ public struct Client: Sendable {
     _ request: HTTPRequest,
     body: Data? = nil
   ) async throws -> RawResponse {
-    try request.method.validateBodyAllowed(hasBody: body != nil)
+    try validateBodyAllowed(request.method, hasBody: body != nil)
     let response = try await performRequest(
       prepare(request),
       body,
@@ -146,15 +146,6 @@ public struct Client: Sendable {
     )
   }
 
-  private func validateSuccessfulStatus(_ response: BufferedHTTPResponse) throws {
-    guard (200..<300).contains(response.response.status.code) else {
-      throw ClientError.unsuccessfulStatusCode(
-        response.response.status.code,
-        body: response.body.map { String(decoding: $0, as: UTF8.self) }
-      )
-    }
-  }
-
   private func decodeBody<Value: Decodable>(
     _ body: Data,
     as responseType: Value.Type,
@@ -177,6 +168,24 @@ public struct Client: Sendable {
   private func validateRequestURL(_ url: URL) throws {
     guard url.scheme != nil, url.host() != nil else {
       throw ClientError.invalidRequestURL(url.absoluteString)
+    }
+  }
+
+  private func validateBodyAllowed(
+    _ method: HTTPRequest.Method,
+    hasBody: Bool
+  ) throws {
+    if hasBody, method == .get || method == .head {
+      throw ClientError.requestBodyNotAllowed(method)
+    }
+  }
+
+  private func validateSuccessfulStatus(_ response: BufferedHTTPResponse) throws {
+    guard (200..<300).contains(response.response.status.code) else {
+      throw ClientError.unsuccessfulStatusCode(
+        response.response.status.code,
+        body: response.body.map { String(decoding: $0, as: UTF8.self) }
+      )
     }
   }
 
