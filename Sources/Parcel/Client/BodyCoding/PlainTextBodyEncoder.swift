@@ -1,26 +1,26 @@
 #if canImport(FoundationEssentials)
-  import FoundationEssentials
+    import FoundationEssentials
 #else
-  import Foundation
+    import Foundation
 #endif
 
 /// A request-body encoder for UTF-8 plain-text `String` values.
 public struct PlainTextBodyEncoder: RequestBodyEncoder, Sendable {
-  public var defaultContentType: String? { "text/plain" }
+    public var defaultContentType: String? { "text/plain" }
 
-  public init() {}
+    public init() {}
 
-  public func encode<Request: Encodable>(_ value: Request) throws -> Data {
-    guard let text = value as? String else {
-      throw EncodingError.invalidValue(
-        value,
-        .init(
-          codingPath: [],
-          debugDescription: "PlainTextBodyEncoder only supports String request bodies."
-        )
-      )
+    public func encode<Request: Encodable>(_ value: Request) throws -> Data {
+        guard let text = value as? String else {
+            throw EncodingError.invalidValue(
+                value,
+                .init(
+                    codingPath: [],
+                    debugDescription: "PlainTextBodyEncoder only supports String request bodies."
+                )
+            )
+        }
+
+        return Data(text.utf8)
     }
-
-    return Data(text.utf8)
-  }
 }

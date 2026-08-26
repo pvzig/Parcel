@@ -1,22 +1,22 @@
 #if canImport(FoundationEssentials)
-  import FoundationEssentials
+    import FoundationEssentials
 #else
-  import Foundation
+    import Foundation
 #endif
 
 /// A request-body encoder for JSON values.
 public struct JSONBodyEncoder: RequestBodyEncoder, Sendable {
-  public let makeEncoder: @Sendable () -> JSONEncoder
+    public let makeEncoder: @Sendable () -> JSONEncoder
 
-  public var defaultContentType: String? { "application/json" }
+    public var defaultContentType: String? { "application/json" }
 
-  public init(
-    makeEncoder: @escaping @Sendable () -> JSONEncoder = { JSONEncoder() }
-  ) {
-    self.makeEncoder = makeEncoder
-  }
+    public init(
+        makeEncoder: @escaping @Sendable () -> JSONEncoder = { JSONEncoder() }
+    ) {
+        self.makeEncoder = makeEncoder
+    }
 
-  public func encode<Request: Encodable>(_ value: Request) throws -> Data {
-    try makeEncoder().encode(value)
-  }
+    public func encode<Request: Encodable>(_ value: Request) throws -> Data {
+        try makeEncoder().encode(value)
+    }
 }

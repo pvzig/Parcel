@@ -18,11 +18,24 @@ jobs:
       swiftlang/swift:nightly-6.4.x-noble@sha256:dc0323c7520b054912489c562e81e101308b3199e8c2ac516ef16f7a47d7e202
     env:
       PARCEL_INCLUDE_WASM_TESTS: "0"
+      SWIFT_FORMAT_VERSION: "603.0.0"
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install swift-format
+        run: |
+          formatter_source="$(mktemp -d)"
+          git clone --branch "$SWIFT_FORMAT_VERSION" --depth 1 \
+            https://github.com/swiftlang/swift-format.git "$formatter_source"
+          swift build --package-path "$formatter_source" -c release --product swift-format
+          install -Dm755 "$formatter_source/.build/release/swift-format" \
+            /opt/homebrew/bin/swift-format
+          /opt/homebrew/bin/swift-format --version
+
       - name: Format lint
-        run: swift format lint --strict --recursive --parallel Sources Tests Package.swift
+        run: >-
+          /opt/homebrew/bin/swift-format lint --strict --recursive --parallel
+          Sources Tests Package.swift
 
       - name: Build
         run: swift build --scratch-path .build-ci-build
