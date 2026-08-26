@@ -16,6 +16,10 @@ import HTTPTypes
 
 /// Sends typed Parcel requests through the browser Fetch API.
 public struct Client: Sendable {
+  private enum BodyCollectionError: Error {
+    case exceedsLimit
+  }
+
   private struct BufferedHTTPResponse: Sendable {
     let response: HTTPResponse
     let body: Data?
@@ -245,37 +249,34 @@ public struct Client: Sendable {
     }
   }
 
-  /// Consumes the scoped response reader completely. `nil` records that the body exceeded the
-  /// configured cap while still draining the reader to its terminal state.
+  /// Collects the scoped response body, returning `nil` as soon as it exceeds the configured cap.
   private static func collectBody<Reader: AsyncReader & ~Copyable>(
     _ reader: consuming Reader,
     upTo maximumBytes: Int
   ) async throws -> Data?
   where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields? {
     var body = Data()
-    var exceededLimit = false
 
     do {
-      _ = try await reader.forEachBuffer { buffer async throws(Never) in
+      _ = try await reader.forEachBuffer { buffer async throws(BodyCollectionError) in
         var consumer = buffer.consumeAll()
         while let byte = consumer.next() {
-          guard exceededLimit == false else {
-            continue
-          }
-
           let (newCount, overflow) = body.count.addingReportingOverflow(1)
           guard overflow == false, newCount <= maximumBytes else {
-            body.removeAll(keepingCapacity: false)
-            exceededLimit = true
-            continue
+            throw .exceedsLimit
           }
           body.append(byte)
         }
       }
     } catch let error {
-      try error.unwrap()
+      switch error {
+      case .first(let readFailure):
+        throw readFailure
+      case .second(.exceedsLimit):
+        return nil
+      }
     }
 
-    return exceededLimit ? nil : body
+    return body
   }
 }

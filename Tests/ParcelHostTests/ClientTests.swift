@@ -527,5 +527,7 @@
     } catch let error as ClientError {
       #expect(error == .responseBodyTooLarge(maximumBytes: 4))
     }
+
+    #expect(await httpClient.responseBodyReadCount == 1)
   }
 #endif

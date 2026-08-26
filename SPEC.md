@@ -83,9 +83,10 @@ Parcel exposes:
 - Parcel buffers successful, error, and raw response bodies inside the scoped HTTP response handler.
   Success and raw responses exceeding the limit throw
   `ClientError.responseBodyTooLarge(maximumBytes:)`.
-- Parcel continues draining an oversized reader to its terminal state. For non-2xx typed responses,
-  an oversized body produces `ClientError.unsuccessfulStatusCode` with a `nil` text body, preserving
-  the more useful status failure.
+- Parcel ends an oversized reader's scope as soon as it observes the first byte past the limit; the
+  surrounding HTTP client owns cleanup for the nonterminal reader. For non-2xx typed responses, an
+  oversized body produces `ClientError.unsuccessfulStatusCode` with a `nil` text body, preserving the
+  more useful status failure.
 - Empty successful responses decode as `EmptyResponse`. Decoders declaring
   `decodesEmptyResponseBodies == true`, currently plain text and raw data, receive zero bytes. Other
   output types throw `ClientError.emptyResponseBody`.

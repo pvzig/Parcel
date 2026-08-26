@@ -164,6 +164,14 @@
     }
   }
 
+  private actor ResponseBodyReadRecorder {
+    private(set) var count = 0
+
+    func recordRead() {
+      count += 1
+    }
+  }
+
   struct CannedResponseBodyReader: AsyncReader, ~Copyable {
     typealias ReadElement = UInt8
     typealias ReadFailure = Never
@@ -172,9 +180,11 @@
 
     private var buffer: UniqueArray<UInt8>
     private var deliveredBody = false
+    private let readRecorder: ResponseBodyReadRecorder
 
-    init(body: Data) {
+    fileprivate init(body: Data, readRecorder: ResponseBodyReadRecorder) {
       self.buffer = UniqueArray(copying: body)
+      self.readRecorder = readRecorder
     }
 
     mutating func read<Return: ~Copyable, Failure: Error>(
@@ -184,6 +194,8 @@
           consuming HTTPFields??
         ) async throws(Failure) -> Return
     ) async throws(EitherError<Never, Failure>) -> Return {
+      await readRecorder.recordRead()
+
       let finalElement: HTTPFields??
       if deliveredBody || buffer.isEmpty {
         finalElement = .some(nil)
@@ -220,6 +232,7 @@
     let defaultRequestOptions = RequestOptions()
     private let recorder = RequestRecorder()
     private let response: CannedResponse
+    private let responseBodyReadRecorder = ResponseBodyReadRecorder()
 
     var lastRequest: HTTPRequest? {
       get async { await recorder.lastRequest }
@@ -227,6 +240,10 @@
 
     var lastBody: Data? {
       get async { await recorder.lastBody }
+    }
+
+    var responseBodyReadCount: Int {
+      get async { await responseBodyReadRecorder.count }
     }
 
     init(response: CannedResponse) {
@@ -255,7 +272,10 @@
 
       return try await responseHandler(
         response.response,
-        CannedResponseBodyReader(body: response.body)
+        CannedResponseBodyReader(
+          body: response.body,
+          readRecorder: responseBodyReadRecorder
+        )
       )
     }
   }

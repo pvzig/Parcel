@@ -122,8 +122,9 @@ component declares the media-type defaults it owns, and `Client.BodyCoding` comb
 
 `Client(configuration:)` is available on browser-capable Wasm builds with
 `HTTP_API_ENABLE_WASM=1`. It installs JavaScriptKit's event-loop executor and owns the upstream
-`FetchHTTPClient`; Parcel does not expose a transport-injection API. Parcel drains each scoped
-response reader completely before the upstream HTTP operation returns.
+`FetchHTTPClient`; Parcel does not expose a transport-injection API. Parcel consumes response bytes
+inside the upstream client's scoped handler and ends that scope immediately when the configured
+buffer limit is exceeded.
 
 The pinned `FetchHTTPClient` currently buffers outgoing request bodies and does not yet expose
 per-request Fetch options, timeouts, AbortController cancellation propagation, or the final redirect
