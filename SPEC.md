@@ -157,6 +157,11 @@ links its BridgeJS skeleton, and it links `JavaScriptEventLoopTestSupport` so as
 JavaScript event-loop executor. `Tests/prelude.mjs` provides deterministic `fetch`, response headers,
 and `ReadableStream` fixtures. PackageToJS uses the vendored `Vendor/browser_wasi_shim` package.
 
+CI pins the host and Wasm jobs to the exact Swift 6.4 snapshot container digest. The matching Wasm
+SDK ID, official download URL, and SHA-256 checksum are checked into the workflow rather than stored
+as independently mutable repository variables. A Swift upgrade must update that compiler/SDK
+contract together.
+
 ```sh
 export HTTP_API_ENABLE_WASM=1
 export PARCEL_INCLUDE_WASM_TESTS=1
