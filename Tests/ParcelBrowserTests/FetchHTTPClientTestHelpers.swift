@@ -80,11 +80,8 @@
 
       _ = configureResponse(
         JSValue.number(Double(statusCode)),
-        JSValue.null,
         JSValue.string(headersJSON),
-        JSValue.string(bodyText),
-        JSValue.null,
-        JSValue.string("{}")
+        JSValue.string(bodyText)
       )
     }
 

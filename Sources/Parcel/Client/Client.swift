@@ -10,8 +10,6 @@ import HTTPTypes
 #if arch(wasm32) && canImport(FetchHTTPClient) && canImport(JavaScriptEventLoop)
   import FetchHTTPClient
   import JavaScriptEventLoop
-
-  typealias DefaultExecutorFactory = JavaScriptEventLoop
 #endif
 
 /// Sends typed Parcel requests through the browser Fetch API.
@@ -176,11 +174,6 @@ public struct Client: Sendable {
     return try bodyCoding.decode(responseType, from: body)
   }
 
-  /// Rejects URLs that `HTTPRequest` cannot represent as an absolute request target.
-  ///
-  /// A schemeless URL traps inside `HTTPRequest`'s initializer, and a URL with a scheme but no
-  /// authority (`mailto:someone@example.com`, `file:///tmp/x`) silently produces an `HTTPRequest`
-  /// whose `url` is `nil`, which HTTP clients can only report as a late, unrelated failure.
   private func validateRequestURL(_ url: URL) throws {
     guard url.scheme != nil, url.host() != nil else {
       throw ClientError.invalidRequestURL(url.absoluteString)

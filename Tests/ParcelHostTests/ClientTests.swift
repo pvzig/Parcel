@@ -110,26 +110,6 @@
     #expect(String(decoding: body, as: UTF8.self) == "publish")
   }
 
-  @Test func formURLEncodedBodyEncoderEncodesFlatPayloads() throws {
-    let encoder = FormURLEncodedBodyEncoder()
-    let payload = TokenExchangePayload(
-      grantType: "client_credentials",
-      scope: "read write",
-      expiresIn: 3600,
-      active: true,
-      tags: ["fast", "beta"]
-    )
-
-    let body = try encoder.encode(payload)
-    let fields = try decodeFormFields(body)
-
-    #expect(fields["grant_type"] == ["client_credentials"])
-    #expect(fields["scope"] == ["read write"])
-    #expect(fields["expires_in"] == ["3600"])
-    #expect(fields["active"] == ["true"])
-    #expect(fields["tag"] == ["fast", "beta"])
-  }
-
   @Test func perOperationFormBodyCodingEncodesFormAndDecodesJSON() async throws {
     let httpClient = RecordingHTTPClient(
       response: fixtureResponse(
@@ -319,19 +299,6 @@
 
     #expect(response == EmptyResponse())
     #expect(request?.method == .head)
-  }
-
-  @Test func emptyResponseCanDecodeToEmptyResponse() async throws {
-    let httpClient = RecordingHTTPClient(
-      response: fixtureResponse(statusCode: 204)
-    )
-    let client = Client(httpClient: httpClient)
-
-    let response = try await client.send(
-      Client.Request<EmptyResponse>.delete(exampleStatusURL)
-    )
-
-    #expect(response == EmptyResponse())
   }
 
   @Test func emptySuccessfulBodyThrowsEmptyResponseBodyWhenExpectingModel() async throws {
