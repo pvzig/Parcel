@@ -14,7 +14,7 @@ jobs:
   host:
     name: Host build, test, and format
     runs-on: ubuntu-latest
-    container: swift:6.3
+    container: swiftlang/swift:nightly-6.4.x-noble
     env:
       PARCEL_INCLUDE_WASM_TESTS: "0"
     steps:
@@ -32,15 +32,16 @@ jobs:
   wasm:
     name: Wasm browser tests
     runs-on: ubuntu-latest
-    container: swift:6.3
+    container: swiftlang/swift:nightly-6.4.x-noble
     # The Wasm lane needs a Swift SDK bundle, which is not distributed with the toolchain image.
     # Set the WASM_SDK_URL and WASM_SDK_CHECKSUM repository variables to the swiftwasm SDK
     # matching .swift-version, and this job starts running. Until then it is skipped rather than
     # reported as a false pass.
     if: vars.WASM_SDK_URL != '' && vars.WASM_SDK_CHECKSUM != ''
     env:
+      HTTP_API_ENABLE_WASM: "1"
       PARCEL_INCLUDE_WASM_TESTS: "1"
-      PARCEL_SWIFT_SDK: ${{ vars.WASM_SDK_NAME || 'swift-6.3-RELEASE_wasm' }}
+      PARCEL_SWIFT_SDK: ${{ vars.WASM_SDK_NAME || 'swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm' }}
     steps:
       - uses: actions/checkout@v4
 

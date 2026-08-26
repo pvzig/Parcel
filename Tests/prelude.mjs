@@ -324,13 +324,19 @@ function runAbortableOperation({ signal, requestRecord, delayMilliseconds = 0, p
 function makeHeaders(headers) {
   const entries = Object.entries(normalizeHeaders(headers));
   const headersObject = {
-    entries,
+    entries() {
+      if (this !== headersObject) {
+        throw makeNamedError("TypeError", "Illegal invocation");
+      }
+
+      return entries[Symbol.iterator]();
+    },
     forEach(callback) {
       if (this !== headersObject) {
         throw makeNamedError("TypeError", "Illegal invocation");
       }
 
-      for (const [key, value] of this.entries) {
+      for (const [key, value] of entries) {
         callback(value, key, headersObject);
       }
     },
@@ -430,6 +436,7 @@ function makeResponse(url, requestRecord, signal) {
   const behavior = state.nextResponse.behavior;
   const response = {
     status: behavior.omitResponseStatus ? undefined : state.nextResponse.status,
+    statusText: "",
     url: state.nextResponse.url ?? String(url),
     headers: makeHeaders(state.nextResponse.headers),
     body:

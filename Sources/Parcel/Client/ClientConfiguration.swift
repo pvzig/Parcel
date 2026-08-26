@@ -3,17 +3,14 @@ import HTTPTypes
 /// The immutable, client-wide defaults Parcel applies when preparing requests and decoding
 /// responses.
 public struct ClientConfiguration: Sendable {
+  /// The default cap on response bytes Parcel buffers inside an HTTP client's response handler.
+  public static let defaultMaximumBufferedBodyBytes = 2 * 1024 * 1024
+
   /// Header fields added to every request, unless a per-request field overrides the same name.
   public let defaultHeaders: HTTPFields
 
-  /// The codec used whenever `Client.send` is called without an explicit codec.
-  public let defaultCodec: Client.Codec
-
-  /// The timeout applied whenever a call omits one; `nil` disables the default timeout.
-  ///
-  /// The browser transport's deadline covers the fetch *and* the consumption of the response
-  /// body, so a client streaming long-lived responses should configure this property as `nil`.
-  public let defaultTimeout: Duration?
+  /// The body coding used whenever an operation does not declare its own.
+  public let defaultBodyCoding: Client.BodyCoding
 
   /// The cap on response bytes Parcel buffers in memory when decoding or reporting an error body.
   public let maximumBufferedBodyBytes: Int
@@ -21,14 +18,12 @@ public struct ClientConfiguration: Sendable {
   /// Creates a configuration. Every parameter has a conservative default.
   public init(
     defaultHeaders: HTTPFields = [:],
-    defaultCodec: Client.Codec = .json(),
-    defaultTimeout: Duration? = .seconds(90),
-    maximumBufferedBodyBytes: Int = HTTPBody.defaultMaximumCollectedBytes
+    defaultBodyCoding: Client.BodyCoding = .json(),
+    maximumBufferedBodyBytes: Int = Self.defaultMaximumBufferedBodyBytes
   ) {
     precondition(maximumBufferedBodyBytes >= 0, "maximumBufferedBodyBytes must be nonnegative")
     self.defaultHeaders = defaultHeaders
-    self.defaultCodec = defaultCodec
-    self.defaultTimeout = defaultTimeout
+    self.defaultBodyCoding = defaultBodyCoding
     self.maximumBufferedBodyBytes = maximumBufferedBodyBytes
   }
 }

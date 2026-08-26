@@ -4,7 +4,7 @@ Instructions for coding agents working on this repo.
 
 ## Orientation
 
-[`SPEC.md`](SPEC.md) is the source of truth for Parcel's public API, behavior, and transport
+[`SPEC.md`](SPEC.md) is the source of truth for Parcel's public API, behavior, and HTTP client
 model. It is maintained as a description of what the code actually does, not as a wish list —
 when you change behavior, update the matching SPEC bullet in the same change.
 
@@ -41,7 +41,7 @@ Formatting is part of validation. Also confirm `git diff --check` is clean.
 ## House rules
 
 - Do not commit unless the human explicitly asks. Leave changes staged or in the working tree.
-- Add tests with behavior changes: host tests for `Client` and codec logic using an injected
-  `Transport`, Wasm tests for anything touching `BrowserTransport`. The JavaScript `fetch` shim
-  the Wasm tests drive lives in [`Tests/prelude.mjs`](Tests/prelude.mjs).
+- Add tests with behavior changes: host tests for `Client` and body-coding logic using an injected
+  `HTTPAPIs.HTTPClient`, Wasm tests for anything touching `FetchHTTPClient`. The JavaScript `fetch`
+  shim the Wasm tests drive lives in [`Tests/prelude.mjs`](Tests/prelude.mjs).
 - Keep `README.md` aimed at library users and `SPEC.md` aimed at implementers.

@@ -1,32 +1,21 @@
 import HTTPTypes
 
-#if canImport(FoundationEssentials)
-  import FoundationEssentials
-#else
-  import Foundation
-#endif
-
 extension Client {
   /// A successfully decoded response value plus the response metadata Parcel preserved.
   public struct Response<Value> {
     /// The decoded response value.
     public let value: Value
 
-    /// The HTTP response head returned by the transport.
+    /// The HTTP response head returned by the underlying HTTP client.
     public let response: HTTPResponse
-
-    /// The final response URL, if the transport reported one.
-    public let url: URL?
 
     /// Creates a typed response wrapper.
     public init(
       value: Value,
-      response: HTTPResponse,
-      url: URL?
+      response: HTTPResponse
     ) {
       self.value = value
       self.response = response
-      self.url = url
     }
   }
 }

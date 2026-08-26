@@ -1,131 +1,145 @@
 # Parcel
 
-Parcel is a small browser HTTP client for SwiftWASM with pluggable typed body codecs. It defaults to JSON for `Encodable` request bodies and `Decodable` responses.
+Parcel is a typed HTTP client for Swift Wasm. It layers request encoders and response decoders over
+the Swift HTTP API proposal and uses its `FetchHTTPClient` implementation in browser-capable Wasm
+runtimes.
+
+Parcel currently requires Swift 6.4 and a matching Swift Wasm SDK. Because the HTTP API proposal is
+still experimental, Parcel pins a tested upstream revision. Set `HTTP_API_ENABLE_WASM=1` whenever a
+Wasm build resolves or builds the package so SwiftPM exposes `FetchHTTPClient`.
 
 ## Usage
 
 ```swift
-struct Request: Encodable {}
-struct Response: Decodable {}
+struct GenerateRequest: Encodable, Sendable {
+    let pagePath: String
+}
 
+struct GenerateResponse: Decodable {
+    let id: String
+}
+
+let generateURL = URL(string: "https://example.com/api/generate")!
 let client = Client()
 
+extension Client.Request where Output == GenerateResponse {
+    static func generate(_ body: GenerateRequest) -> Self {
+        .post(generateURL, body: body)
+    }
+}
+
 let accepted = try await client.send(
-    .post(
-        URL(string: "https://example.com/api/generate")!,
-        body: Request()
-    ),
-    as: Response.self
+    .generate(GenerateRequest(pagePath: "/posts/example"))
 )
 ```
 
-Typed decode consumes the response body once. `Client.Response` preserves the decoded value, the response head, and the final URL, but it does not retain raw response bytes after decoding. `HTTPBody.text()` buffers in memory and defaults to a 2 MiB cap. Raise that limit explicitly when you expect larger bodies.
+`Client.send` validates that the URL is absolute, prepares the request headers and body, and returns
+the decoded output. For an ad-hoc request, the assignment provides the output type:
 
-### Raw Requests
-
-If you need to drop to a raw request, use `Client.raw(_:, body:timeout:)`. Raw calls do not apply codec-specific `Accept` or `Content-Type` defaults. Raw responses may carry 4xx or 5xx status codes; typed `Client.send` calls treat non-2xx responses as failures and throw `ClientError.unsuccessfulStatusCode` before decoding.
 ```swift
-let request = HTTPRequest(method: .get, url: URL(string: "https://example.com/api/generate")!)
+let generated: GenerateResponse = try await client.send(.get(generateURL))
+```
+
+Use `Client.response(_:)` when you also need the `HTTPResponse` head. The typed operation continues
+to provide the output type:
+
+```swift
+let response = try await client.response(
+    .generate(GenerateRequest(pagePath: "/posts/example"))
+)
+```
+
+Parcel consumes the response body inside the underlying HTTP client's scoped response handler, so
+scoped response readers and their buffers never escape.
+
+### Raw requests
+
+Use `Client.raw(_:, body:)` when you need direct `HTTPRequest` access. Raw request and response
+bodies are `Data`; raw calls do not add body-coding-specific `Accept` or `Content-Type` headers.
+Raw responses return non-2xx statuses unchanged.
+
+```swift
+let request = HTTPRequest(method: .get, url: generateURL)
 let response = try await client.raw(request)
 
 let statusCode = response.response.status.code
-let bodyText = try await response.body?.text()
+let bodyText = String(decoding: response.body, as: UTF8.self)
 ```
 
-### EmptyResponse
+Both typed and raw responses are buffered up to
+`ClientConfiguration.maximumBufferedBodyBytes`, which defaults to 2 MiB.
 
-For successful responses with no body, use `EmptyResponse`:
+### Empty responses
+
+Use `EmptyResponse` for successful responses that intentionally carry no body:
+
 ```swift
-let deleteURL = URL(string: "https://example.com/api/delete")!
-let response = try await client.send(
-    .delete(deleteURL),
-    as: EmptyResponse.self
+let empty = try await client.send(
+    Client.Request<EmptyResponse>.delete(deleteURL)
 )
 ```
 
-### Custom Encoders
+### Body coding
 
-If you need custom `JSONEncoder` / `JSONDecoder` behavior, configure the default codec through `ClientConfiguration`:
+JSON is the default. Parcel also includes `.formURLEncoded()`, `.plainText()`, and `.rawData()`.
+An operation-specific value takes precedence over `ClientConfiguration.defaultBodyCoding`.
+
+```swift
+let request = Client.Request<TokenResponse>.post(
+    tokenURL,
+    body: credentials,
+    bodyCoding: .formURLEncoded()
+)
+let token = try await client.send(request)
+```
+
+Form URL encoding is request-only by default: it sends
+`application/x-www-form-urlencoded` and decodes the endpoint's response as JSON. Plain-text and
+raw-data body coding accept and decode empty response bodies.
+
+For custom JSON behavior, configure factories that create a fresh Foundation coder per operation:
 
 ```swift
 let client = Client(
     configuration: ClientConfiguration(
-        defaultCodec: .json(
-            codec: JSONBodyCodec(
+        defaultBodyCoding: .json(
+            decoder: JSONBodyDecoder(
                 makeDecoder: {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase
                     return decoder
                 }
             )
-        ),
-        defaultTimeout: .seconds(30)
-    )
-)
-```
-
-The encoder and decoder factories run for each encode or decode operation. This keeps mutable Foundation coders isolated between concurrent requests.
-
-### Codecs
-
-Parcel includes additional built-in codecs for common wire formats: `.formURLEncoded()`, `.plainText()`, `.rawData()`.
-
-If you need a different typed wire format entirely, provide a custom `BodyCodec`. Declare the codec's media types on the codec itself so `Client.Codec(bodyCodec:)` adopts the right default `Content-Type` and `Accept` headers. Use the exact media-type initializers when you need to override or suppress those defaults:
-
-```swift
-enum CustomCodecError: Error {
-    case unsupported
-}
-
-struct CustomCodec: BodyCodec {
-    var defaultRequestContentType: String? { "application/custom" }
-    var defaultAccept: [String] { ["application/custom"] }
-
-    func encode<Request: Encodable>(_ value: Request) throws -> Data {
-        throw CustomCodecError.unsupported
-    }
-
-    func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
-        throw CustomCodecError.unsupported
-    }
-}
-
-let client = Client(
-    configuration: ClientConfiguration(
-        defaultCodec: Client.Codec(bodyCodec: CustomCodec())
-    )
-)
-```
-
-## Runtime
-
-Parcel is browser-oriented. `Client()` is only available on `wasm32` builds that include Parcel's browser transport dependencies. Host builds must inject a custom `Transport`, which is how Parcel's native unit tests exercise the higher-level client behavior. On `wasm32`, `Client()` constructs a `BrowserTransport`; requests made in an unsupported JavaScript runtime fail with `ClientError.unsupportedPlatform`.
-
-`BrowserTransport` is likewise only available on those `wasm32` builds. It installs the JavaScriptKit executor when it initializes in a supported runtime.
-
-Browser transport responses stream lazily from `ReadableStream` through `HTTPBody`. Outgoing request bodies are still buffered before Parcel passes them to `fetch`, with a 2 MiB default cap configurable through `BrowserTransport(maximumBufferedRequestBodyBytes:)`. Inject that transport into `Client` when you need a different cap.
-
-A timeout covers the fetch *and* the consumption of the response body, because the transport clears its abort timer only once the body reaches end-of-stream. With the 90 second default, a `Client.raw` caller streaming a long-lived response (server-sent events, a slow download) sees the request aborted with `ClientError.timedOut` mid-stream. Use a client configured with `ClientConfiguration(defaultTimeout: nil)` for those calls; a per-call `timeout: nil` selects the configured default rather than disabling it.
-
-### Fetch Options
-
-`fetch` defaults to `credentials: "same-origin"`, so cross-origin requests do not carry cookies unless you ask for them. Configure the Fetch `credentials`, `mode`, `cache`, and `redirect` options on an injected `BrowserTransport`:
-
-```swift
-let client = Client(
-    transport: BrowserTransport(
-        requestOptions: BrowserRequestOptions(
-            credentials: .include,
-            mode: .cors
         )
     )
 )
 ```
 
-Options left `nil` are omitted from the Fetch init dictionary entirely, so the browser applies its own default. Plain `Client()` uses `BrowserTransport`'s default options.
+Custom wire formats can implement `RequestBodyEncoder`, `ResponseBodyDecoder`, or both. Each
+component declares the media-type defaults it owns, and `Client.BodyCoding` combines them.
+
+## HTTP client model
+
+On Wasm, `Client()` installs JavaScriptKit's event-loop executor and constructs upstream
+`FetchHTTPClient`. Host builds and alternative runtimes inject a reference-semantic
+`HTTPAPIs.HTTPClient`:
+
+```swift
+let client = Client(httpClient: MyHTTPClient())
+```
+
+The injected HTTP client may service concurrent Parcel requests and is responsible for
+synchronizing its own shared mutable state. Parcel uses its default request options and drains each
+scoped response reader completely before `HTTPClient.perform` returns.
+
+The pinned `FetchHTTPClient` currently buffers outgoing request bodies and does not yet expose
+per-request Fetch options, timeouts, AbortController cancellation propagation, or the final redirect
+URL. Parcel intentionally does not recreate those browser features in a second transport layer.
 
 ## Errors
 
-Typed requests turn non-2xx responses into `ClientError.unsuccessfulStatusCode`; raw requests return those response statuses unchanged. Both paths can throw `ClientError` for transport and validation failures: network-level Fetch failures (offline, DNS, CORS) use `.fetchFailure` with the underlying JavaScript metadata, unsupported runtimes use `.unsupportedPlatform`, browser globals that disappear after transport initialization use `.invalidJavaScriptContext`, timeouts use `.timedOut`, typed-request URLs that are not absolute — no scheme, or a scheme with no host such as `mailto:` — use `.invalidRequestURL`, and `GET`/`HEAD` requests with bodies use `.requestBodyNotAllowed`. Swift task cancellation remains `CancellationError`.
-
-When upgrading code that exhaustively switches over `ClientError`, account for the newer Fetch, timeout, URL-validation, response-body, and request-body cases.
+Typed requests turn non-2xx responses into `ClientError.unsuccessfulStatusCode`; raw requests return
+those statuses. Parcel also reports invalid absolute URLs, disallowed `GET` or `HEAD` bodies, empty
+typed responses, and responses larger than the configured buffer. Encoding, decoding, cancellation,
+network, and reader failures surface from the body coder or underlying HTTP client without being
+re-wrapped as Parcel transport errors.
