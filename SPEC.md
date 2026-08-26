@@ -74,7 +74,12 @@ uses `Tests/prelude.mjs` for deterministic Fetch fixtures and the vendored
 export HTTP_API_ENABLE_WASM=1
 export PARCEL_INCLUDE_WASM_TESTS=1
 
-swift package --scratch-path .build resolve
+swift_toolchain="$(TOOLCHAINS=org.swift.64202608141a xcrun --find swift)"
+swift_sdk="${PARCEL_SWIFT_SDK:-swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm}"
+"$swift_toolchain" --version
+"$swift_toolchain" sdk list | rg --fixed-strings --line-regexp "$swift_sdk"
+
+"$swift_toolchain" package --scratch-path .build resolve
 
 template_path=".build/checkouts/JavaScriptKit/Plugins/PackageToJS/Templates/package.json"
 browser_wasi_shim_path="${PARCEL_BROWSER_WASI_SHIM_PATH:-$PWD/Vendor/browser_wasi_shim}"
@@ -88,8 +93,8 @@ ruby -rjson -e '
   File.write(file_name, JSON.pretty_generate(package) + "\n")
 '
 
-swift package --scratch-path .build \
-  --swift-sdk "${PARCEL_SWIFT_SDK:-swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm}" \
+"$swift_toolchain" package --scratch-path .build \
+  --swift-sdk "$swift_sdk" \
   js test --default-platform node --prelude ./Tests/prelude.mjs -Xnode --expose-gc
 ```
 

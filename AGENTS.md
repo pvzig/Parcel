@@ -30,6 +30,11 @@ native-only. The lane points JavaScriptKit's PackageToJS template at the vendore
 `registry.npmjs.org`. The full command sequence is in
 [SPEC.md](SPEC.md#validation) — run it verbatim.
 
+The Wasm SDK contains compiler-version-specific modules. Never run this lane with bare `swift` or
+the default `xcrun swift`: invoke the matching August 14 development toolchain selected in
+`SPEC.md`. Seeing “compiled module was created by a different version of the compiler” means the
+wrong host compiler was used; select the matching toolchain before retrying.
+
 ### Formatting
 
 ```sh
