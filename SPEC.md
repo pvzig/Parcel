@@ -7,7 +7,9 @@ buffering, and client defaults while upstream `FetchHTTPClient` owns browser HTT
 
 ## Package
 
-- Parcel uses Swift 6.4 and the matching Wasm SDK pinned by `.swift-version` and CI.
+- Parcel uses the Swift 6.4.0 release pinned by `mise.toml` and `.swift-version`, with the matching
+  `swift-6.4.0-RELEASE_wasm` SDK. CI installs the same mise toolchain on Ubuntu 24.04 and verifies
+  the SDK against Swift.org's published checksum.
 - `swift-http-api-proposal` is pinned to the revision in `Package.swift` because no suitable stable
   release includes the required Wasm `FetchHTTPClient` changes.
 - Browser builds require `HTTP_API_ENABLE_WASM=1`. Wasm tests additionally require
@@ -70,12 +72,21 @@ Run the Wasm lane first, then the host lane, formatting, and the diff check. The
 uses `Tests/prelude.mjs` for deterministic Fetch fixtures and the vendored
 `Vendor/browser_wasi_shim` package.
 
+Install the pinned toolchain and matching SDK once:
+
+```sh
+mise install
+mise exec -- swift sdk install \
+  https://download.swift.org/swift-6.4.0-release/wasm-sdk/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE_wasm.artifactbundle.tar.gz \
+  --checksum f07b7be3c586d92d7a07051fc6d303b87ebea67eadc40640ba59d5a8b79aa86d
+```
+
 ```sh
 export HTTP_API_ENABLE_WASM=1
 export PARCEL_INCLUDE_WASM_TESTS=1
 
-swift_toolchain="$(TOOLCHAINS=org.swift.64202608141a xcrun --find swift)"
-swift_sdk="${PARCEL_SWIFT_SDK:-swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm}"
+swift_toolchain="$(mise which swift)"
+swift_sdk="${PARCEL_SWIFT_SDK:-swift-6.4.0-RELEASE_wasm}"
 "$swift_toolchain" --version
 "$swift_toolchain" sdk list | rg --fixed-strings --line-regexp "$swift_sdk"
 
@@ -99,8 +110,8 @@ ruby -rjson -e '
 ```
 
 ```sh
-PARCEL_INCLUDE_WASM_TESTS=0 swift build --scratch-path .build-xcode-build
-PARCEL_INCLUDE_WASM_TESTS=0 swift test --parallel --scratch-path .build-xcode-tests
+PARCEL_INCLUDE_WASM_TESTS=0 mise exec -- swift build --scratch-path .build-xcode-build
+PARCEL_INCLUDE_WASM_TESTS=0 mise exec -- swift test --parallel --scratch-path .build-xcode-tests
 /opt/homebrew/bin/swift-format format . --recursive --parallel -i
 git diff --check
 ```

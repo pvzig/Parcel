@@ -18,8 +18,8 @@ skills. Everywhere else, run the commands below directly.
 ### Host lane
 
 ```sh
-PARCEL_INCLUDE_WASM_TESTS=0 swift build --scratch-path .build-xcode-build
-PARCEL_INCLUDE_WASM_TESTS=0 swift test --parallel --scratch-path .build-xcode-tests
+PARCEL_INCLUDE_WASM_TESTS=0 mise exec -- swift build --scratch-path .build-xcode-build
+PARCEL_INCLUDE_WASM_TESTS=0 mise exec -- swift test --parallel --scratch-path .build-xcode-tests
 ```
 
 ### Wasm lane
@@ -31,7 +31,7 @@ native-only. The lane points JavaScriptKit's PackageToJS template at the vendore
 [SPEC.md](SPEC.md#validation) — run it verbatim.
 
 The Wasm SDK contains compiler-version-specific modules. Never run this lane with bare `swift` or
-the default `xcrun swift`: invoke the matching August 14 development toolchain selected in
+the default `xcrun swift`: invoke the Swift 6.4.0 release toolchain selected through mise in
 `SPEC.md`. Seeing “compiled module was created by a different version of the compiler” means the
 wrong host compiler was used; select the matching toolchain before retrying.
 

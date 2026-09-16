@@ -4,7 +4,7 @@ Parcel is a typed HTTP client for Swift Wasm. It layers request encoders and res
 the Swift HTTP API proposal and uses its `FetchHTTPClient` implementation in browser-capable Wasm
 runtimes.
 
-Parcel currently requires Swift 6.4 and a matching Swift Wasm SDK. Because the HTTP API proposal is
+Parcel currently requires Swift 6.4.0 and the matching release Wasm SDK. Because the HTTP API proposal is
 still experimental, Parcel pins a tested upstream revision. Set `HTTP_API_ENABLE_WASM=1` whenever a
 Wasm build resolves or builds the package so SwiftPM exposes `FetchHTTPClient`.
 
